@@ -12,7 +12,7 @@ import "@openremote/or-survey-results";
 import "@openremote/or-table";
 import "@openremote/or-panel";
 import "@openremote/or-mwc-components/or-mwc-dialog";
-import {showOkCancelDialog} from "@openremote/or-mwc-components/or-mwc-dialog";
+import {showDialog, showOkCancelDialog} from "@openremote/or-mwc-components/or-mwc-dialog";
 import "@openremote/or-mwc-components/or-mwc-list";
 import {OrTranslate, translate} from "@openremote/or-translate";
 import {InputType, OrInput, OrInputChangedEvent} from "@openremote/or-mwc-components/or-mwc-input";
@@ -378,6 +378,30 @@ export function getPanelContent(panelName: string, asset: Asset, attributes: { [
             }
             fileNameElem.value = str.slice(i, str.length);
         }
+        
+        const showAssetListDialog = (assets: Asset[]): void => {
+            console.log('assets', assets);
+            showDialog(
+                {
+                    title: i18next.t("assets"),
+                    content: html`
+                        <div style="display: grid">
+                            ${assets.sort().map((asset: Asset) =>
+                                html`<pre>${JSON.stringify(asset, null, 2)}</pre>`
+                            )}
+                        </div>
+                    `,
+                    actions: [
+                        {
+                            actionName: "cancel",
+                            content: i18next.t("ok")
+                        }
+                    ],
+                    styles: html`<style></style>`,
+                    dismissAction: null
+                }
+            )
+        }
 
         const discoverAssets = () => {
             manager.rest.api.AgentResource.doProtocolAssetDiscovery(asset.id!)
@@ -385,6 +409,8 @@ export function getPanelContent(panelName: string, asset: Asset, attributes: { [
         } 
 
         const fileToBase64 = () => {
+            const mock = [{"id":"3TJkxdywN72VtPSRp9yh1P","version":2,"createdOn":1616764597169,"name":"Consoles","accessPublicRead":false,"realm":"master","type":"GroupAsset"},{"id":"6tl8lIwzacgxpf1dn2aYRd","version":767,"createdOn":1616764597322,"name":"Chrome","accessPublicRead":true,"parentId":"3TJkxdywN72VtPSRp9yh1P","realm":"master","type":"ConsoleAsset"},{"id":"4A1zzjMl2RSZP5hkAPTHXY","version":1,"createdOn":1616766737542,"name":"batterij","accessPublicRead":false,"parentId":"6tl8lIwzacgxpf1dn2aYRd","realm":"master","type":"ElectricityBatteryAsset"},{"id":"6mcvIEsIF3eJWNALxoCzeb","version":1,"createdOn":1616766752449,"name":"powerpomp","accessPublicRead":false,"parentId":"6tl8lIwzacgxpf1dn2aYRd","realm":"master","type":"ElectricityChargerAsset"},{"id":"3k5FSBmIPg71IFzra3yMer","version":1,"createdOn":1616766852381,"name":"stad","accessPublicRead":false,"parentId":"6tl8lIwzacgxpf1dn2aYRd","realm":"master","type":"CityAsset"},{"id":"6x9cDih9QrSdjqQeKLOIii","version":0,"createdOn":1616772127180,"name":"New Asset","accessPublicRead":false,"parentId":"6mcvIEsIF3eJWNALxoCzeb","realm":"master","type":"BuildingAsset"},{"id":"4sG7sVy0EYriEIqDKi6a7b","version":8,"createdOn":1616772814609,"name":"Chrome","accessPublicRead":true,"parentId":"3TJkxdywN72VtPSRp9yh1P","realm":"master","type":"ConsoleAsset"},{"id":"73NV3R6mLr3LRuc93Z1I5r","version":0,"createdOn":1616775727004,"name":"New Asset","accessPublicRead":false,"parentId":"4sG7sVy0EYriEIqDKi6a7b","realm":"master","type":"HttpClientAgent"},{"id":"5VsNXHeSHEIgua76oWwnIp","version":0,"createdOn":1618574473883,"name":"New Asset","accessPublicRead":false,"realm":"master","type":"DoorSensorAsset"},{"id":"6FEa1cS2DIuSz9TFxRQt3c","version":0,"createdOn":1618574509214,"name":"New Asset","accessPublicRead":false,"parentId":"5VsNXHeSHEIgua76oWwnIp","realm":"master","type":"DoorSensorAsset"},{"id":"3m32v2V3pNp1RRWqsuYlGF","version":0,"createdOn":1618575178044,"name":"New Asset","accessPublicRead":false,"parentId":"6FEa1cS2DIuSz9TFxRQt3c","realm":"master","type":"DoorSensorAsset"},{"id":"4uM0HouAH1agGR6eLOstOu","version":0,"createdOn":1618575292573,"name":"New Asset","accessPublicRead":false,"parentId":"3m32v2V3pNp1RRWqsuYlGF","realm":"master","type":"DoorSensorAsset"},{"id":"2n30IO4tQkRneHuz4ReGSs","version":0,"createdOn":1618575426408,"name":"New Asset","accessPublicRead":false,"realm":"master","type":"DoorSensorAsset"},{"id":"4kBTSEp2h3hr1rkBxb76TF","version":0,"createdOn":1618575500002,"name":"New Asset","accessPublicRead":false,"parentId":"2n30IO4tQkRneHuz4ReGSs","realm":"master","type":"GroupAsset"},{"id":"7aYWP2WkkHepJMAexTQkqy","version":0,"createdOn":1618576890187,"name":"New Asset","accessPublicRead":false,"parentId":"5VsNXHeSHEIgua76oWwnIp","realm":"master","type":"DoorSensorAsset"},{"id":"58OmsO6EatYfg6uvdRfsTF","version":0,"createdOn":1618576901654,"name":"New Asset","accessPublicRead":false,"parentId":"7aYWP2WkkHepJMAexTQkqy","realm":"master","type":"DoorSensorAsset"},{"id":"5QR6s7Amjm8WV2BNxAGPFt","version":0,"createdOn":1618578329894,"name":"New Asset","accessPublicRead":false,"parentId":"7aYWP2WkkHepJMAexTQkqy","realm":"master","type":"DoorSensorAsset"},{"id":"73TiWF7bdN8tJ1ijf5i57S","version":0,"createdOn":1618578340921,"name":"New Asset","accessPublicRead":false,"parentId":"5QR6s7Amjm8WV2BNxAGPFt","realm":"master","type":"BuildingAsset"},{"id":"7MTBpFxc2YYs9ioApcumBV","version":0,"createdOn":1619167161434,"name":"New Asset","accessPublicRead":false,"parentId":"2n30IO4tQkRneHuz4ReGSs","realm":"master","type":"KNXAgent"},{"id":"2mUELFOHFKq2AN9nhwzn4v","version":2,"createdOn":1619178641526,"name":"zw","accessPublicRead":false,"realm":"master","type":"ZWAgent"},{"id":"3fCRBvN9WvzYAgVOjjhe9p","version":1,"createdOn":1619178780493,"name":"knx","accessPublicRead":false,"realm":"master","type":"KNXAgent"}];
+            showAssetListDialog(mock as Asset[]); //todo: remove this
             const fileInputElem = hostElement.shadowRoot!.getElementById('fileuploadElem') as HTMLInputElement;
             if (fileInputElem) {
                 const reader = new FileReader();
@@ -412,6 +438,7 @@ export function getPanelContent(panelName: string, asset: Asset, attributes: { [
                                     showSnackbar(undefined, "Something went wrong, please try again", i18next.t("dismiss"));
                                 } else {
                                     console.info(response.data, response) //todo: do something with this response
+                                    showAssetListDialog(response.data as Asset[]);
                                 }
                             })
                             .catch(() => showSnackbar(undefined, "Something went wrong, please try again", i18next.t("dismiss")));

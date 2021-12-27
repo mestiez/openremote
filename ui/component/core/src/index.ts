@@ -618,7 +618,7 @@ export class Manager implements EventProviderFactory {
     private _console!: Console;
     private _consoleAppConfig?: ConsoleAppConfig;
     private _events?: EventProvider;
-    private _displayRealm?: string = "";
+    private _displayRealm?: string;
 
     public isManagerSameOrigin(): boolean {
         if (!this.ready) {
@@ -702,7 +702,7 @@ export class Manager implements EventProviderFactory {
             console.warn("Failed to initialise the manager");
         }
 
-        this._displayRealm = config.realm;
+        this.displayRealm = config.realm || "master";
 
         return success;
     }
@@ -841,11 +841,11 @@ export class Manager implements EventProviderFactory {
         // Add interceptor to inject authorization header on each request
         rest.addRequestInterceptor(
             (config: AxiosRequestConfig) => {
-                if (!config.headers.Authorization) {
+                if (!config!.headers!.Authorization) {
                     const authHeader = this.getAuthorizationHeader();
 
                     if (authHeader) {
-                        config.headers.Authorization = authHeader;
+                        config!.headers!.Authorization = authHeader;
                     }
                 }
 
@@ -1057,6 +1057,10 @@ export class Manager implements EventProviderFactory {
         return !!(this.getRealm() && this.getRealm() === "master" && this.hasRealmRole("admin"));
     }
 
+    public isRestrictedUser(): boolean {
+        return !!this.hasRealmRole("restricted_user");
+    }
+
     public getApiBaseUrl(): string {
         let baseUrl = this._config.managerUrl!;
         baseUrl += "/api/" + this._config.realm + "/";
@@ -1228,7 +1232,7 @@ export class Manager implements EventProviderFactory {
 
     protected _emitEvent(event: OREvent) {
         window.setTimeout(() => {
-            const listeners = this._listeners.slice();
+            const listeners = this._listeners;
             for (const listener of listeners) {
                 listener(event);
             }

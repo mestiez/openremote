@@ -21,6 +21,7 @@ package org.openremote.manager.mqtt;
 
 import io.moquette.BrokerConstants;
 import io.moquette.broker.Server;
+import io.moquette.broker.SessionRegistry;
 import io.moquette.broker.config.MemoryConfig;
 import io.moquette.broker.security.IAuthenticator;
 import io.moquette.interception.InterceptHandler;
@@ -29,7 +30,10 @@ import io.netty.buffer.Unpooled;
 import io.netty.handler.codec.mqtt.MqttMessageBuilders;
 import io.netty.handler.codec.mqtt.MqttPublishMessage;
 import io.netty.handler.codec.mqtt.MqttQoS;
+import org.apache.camel.builder.RouteBuilder;
 import org.openremote.container.message.MessageBrokerService;
+import org.openremote.container.persistence.PersistenceEvent;
+import org.openremote.container.timer.TimerService;
 import org.openremote.manager.asset.AssetStorageService;
 import org.openremote.manager.event.ClientEventService;
 import org.openremote.manager.security.ManagerIdentityService;
@@ -42,6 +46,8 @@ import org.openremote.model.syslog.SyslogCategory;
 import org.openremote.model.util.TextUtil;
 import org.openremote.model.util.ValueUtil;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
@@ -51,11 +57,13 @@ import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
 import static java.util.stream.StreamSupport.stream;
+import static org.openremote.container.persistence.PersistenceEvent.PERSISTENCE_TOPIC;
+import static org.openremote.container.persistence.PersistenceEvent.isPersistenceEventForEntityType;
 import static org.openremote.container.util.MapAccess.getInteger;
 import static org.openremote.container.util.MapAccess.getString;
 import static org.openremote.model.syslog.SyslogCategory.API;
 
-public class MqttBrokerService implements ContainerService, IAuthenticator {
+public class MqttBrokerService extends RouteBuilder implements ContainerService, IAuthenticator {
 
     public static final int PRIORITY = MED_PRIORITY;
     public static final String INTERNAL_CLIENT_ID = "ManagerInternal";
@@ -69,6 +77,7 @@ public class MqttBrokerService implements ContainerService, IAuthenticator {
     protected ClientEventService clientEventService;
     protected MessageBrokerService messageBrokerService;
     protected ScheduledExecutorService executorService;
+    protected TimerService timerService;
     protected final Map<String, MqttConnection> clientIdConnectionMap = new HashMap<>();
     protected List<MQTTHandler> customHandlers = new ArrayList<>();
 
@@ -76,6 +85,7 @@ public class MqttBrokerService implements ContainerService, IAuthenticator {
     protected String host;
     protected int port;
     protected Server mqttBroker;
+    protected SessionRegistry sessionRegistry;
 
     @Override
     public int getPriority() {
@@ -91,6 +101,7 @@ public class MqttBrokerService implements ContainerService, IAuthenticator {
         ManagerIdentityService identityService = container.getService(ManagerIdentityService.class);
         messageBrokerService = container.getService(MessageBrokerService.class);
         executorService = container.getExecutorService();
+        timerService = container.getService(TimerService.class);
 
         if (!identityService.isKeycloakEnabled()) {
             LOG.warning("MQTT connections are not supported when not using Keycloak identity provider");
@@ -98,6 +109,7 @@ public class MqttBrokerService implements ContainerService, IAuthenticator {
         } else {
             active = true;
             identityProvider = (ManagerKeycloakIdentityProvider) identityService.getIdentityProvider();
+            container.getService(MessageBrokerService.class).getContext().addRoutes(this);
         }
     }
 
@@ -108,7 +120,7 @@ public class MqttBrokerService implements ContainerService, IAuthenticator {
         properties.setProperty(BrokerConstants.HOST_PROPERTY_NAME, host);
         properties.setProperty(BrokerConstants.PORT_PROPERTY_NAME, String.valueOf(port));
         properties.setProperty(BrokerConstants.ALLOW_ANONYMOUS_PROPERTY_NAME, String.valueOf(true));
-        List<? extends InterceptHandler> interceptHandlers = Collections.singletonList(new ORInterceptHandler(this, identityProvider, messageBrokerService));
+        List<? extends InterceptHandler> interceptHandlers = Collections.singletonList(new ORInterceptHandler(this, identityProvider, messageBrokerService, timerService));
 
         // Load custom handlers
         this.customHandlers = stream(ServiceLoader.load(MQTTHandler.class).spliterator(), false)
@@ -128,6 +140,43 @@ public class MqttBrokerService implements ContainerService, IAuthenticator {
         mqttBroker = new Server();
         mqttBroker.startServer(new MemoryConfig(properties), interceptHandlers, null, this, new ORAuthorizatorPolicy(identityProvider, this, assetStorageService, clientEventService));
         LOG.fine("Started MQTT broker");
+    }
+
+
+    @SuppressWarnings("unchecked")
+    @Override
+    public void configure() throws Exception {
+        from(PERSISTENCE_TOPIC)
+            .routeId("UserPersistenceChanges")
+            .filter(isPersistenceEventForEntityType(User.class))
+            .process(exchange -> {
+                PersistenceEvent<User> persistenceEvent = (PersistenceEvent<User>)exchange.getIn().getBody(PersistenceEvent.class);
+                User user = persistenceEvent.getEntity();
+
+                if (!user.isServiceAccount()) {
+                    return;
+                }
+
+                boolean forceDisconnect = persistenceEvent.getCause() == PersistenceEvent.Cause.DELETE;
+
+                if (persistenceEvent.getCause() == PersistenceEvent.Cause.UPDATE) {
+                    // Force disconnect if certain properties have changed
+                    forceDisconnect = Arrays.stream(persistenceEvent.getPropertyNames()).anyMatch((propertyName) ->
+                        (propertyName.equals("enabled") && !user.getEnabled())
+                            || propertyName.equals("username"));
+                }
+
+                if (forceDisconnect) {
+                    // Find existing connection for this user
+                    Arrays.stream(getConnections())
+                        .filter(connection -> user.getUsername().equals(connection.getUsername()))
+                        .findFirst()
+                        .ifPresent(connection -> {
+                            LOG.info("User modified or deleted so forcing connected client to disconnect: connection=" + connection);
+                            forceDisconnect(connection.getClientId());
+                        });
+                }
+            });
     }
 
     @Override
@@ -172,7 +221,7 @@ public class MqttBrokerService implements ContainerService, IAuthenticator {
 
         Tenant tenant = identityProvider.getTenant(realm);
 
-        if (tenant == null || !tenant.getEnabled()) {
+        if (tenant == null || !tenant.isActive(timerService.getCurrentTimeMillis())) {
             LOG.warning("Realm not found or is inactive: " + realm);
             return false;
         }
@@ -196,9 +245,92 @@ public class MqttBrokerService implements ContainerService, IAuthenticator {
         }
     }
 
-    public MqttConnection removeConnection(String clientId) {
+    public MqttConnection[] getConnections() {
         synchronized (clientIdConnectionMap) {
-            return clientIdConnectionMap.remove(clientId);
+            return clientIdConnectionMap.values().toArray(new MqttConnection[0]);
+        }
+    }
+
+    /**
+     * We have this as there's no way to configure expiry time of sessions in Moquette so to make things simple we
+     * clear the session whenever the client disconnects; the client can then re-subscribe as needed
+     */
+    public MqttConnection clearConnectionSession(String clientId) {
+        if (mqttBroker == null) {
+            return null;
+        }
+
+        synchronized (clientIdConnectionMap) {
+            MqttConnection connection = clientIdConnectionMap.remove(clientId);
+            if (connection != null && !connection.isCleanSession()) {
+                try {
+                    SessionRegistry sessionRegistry = getSessionRegistry();
+                    Object session = getSession(clientId);
+                    if (sessionRegistry == null || session == null) {
+                        throw new IllegalStateException("Couldn't get session registry and/or session for client: " + clientId);
+                    }
+                    Method removeMethod = sessionRegistry.getClass().getDeclaredMethod("remove", session.getClass());
+                    removeMethod.setAccessible(true);
+                    removeMethod.invoke(sessionRegistry, session);
+                } catch (Exception e) {
+                    LOG.log(Level.WARNING, "Failed to remove Moquette session using reflection", e);
+                }
+            }
+            return connection;
+        }
+    }
+
+    protected SessionRegistry getSessionRegistry() {
+        if (mqttBroker == null) {
+            return null;
+        }
+        if (sessionRegistry == null) {
+            try {
+                Field sessionsField = mqttBroker.getClass().getDeclaredField("sessions");
+                sessionsField.setAccessible(true);
+                sessionRegistry = (SessionRegistry) sessionsField.get(mqttBroker);
+            } catch (Exception e) {
+                LOG.log(Level.WARNING, "Failed to get Moquette session registry using reflection", e);
+            }
+        }
+
+        return sessionRegistry;
+    }
+
+    protected Object getSession(String clientId) {
+        if (mqttBroker == null) {
+            return null;
+        }
+
+        try {
+            SessionRegistry sessionRegistry = getSessionRegistry();
+            Method retrieveSessionMethod = SessionRegistry.class.getDeclaredMethod("retrieve", String.class);
+            retrieveSessionMethod.setAccessible(true);
+            return retrieveSessionMethod.invoke(sessionRegistry, clientId);
+        } catch (Exception e) {
+            LOG.log(Level.WARNING, "Failed to get Moquette session using reflection", e);
+        }
+
+        return null;
+    }
+
+    public void forceDisconnect(String clientId) {
+        MqttConnection connection = getConnection(clientId);
+        Object session = getSession(clientId);
+
+        if (connection == null || session == null) {
+            return;
+        }
+
+        try {
+            Method closeMethod = session.getClass().getDeclaredMethod("closeImmediately");
+            closeMethod.setAccessible(true);
+            Method disconnectMethod = session.getClass().getDeclaredMethod("disconnect");
+            disconnectMethod.setAccessible(true);
+            closeMethod.invoke(session);
+            disconnectMethod.invoke(session);
+        } catch (Exception e) {
+            LOG.log(Level.WARNING, "Failed to force disconnect Moquette session using reflection", e);
         }
     }
 

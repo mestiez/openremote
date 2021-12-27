@@ -83,22 +83,7 @@ public class ManagerBasicIdentityProvider extends BasicIdentityProvider implemen
     }
 
     @Override
-    public User[] getUsers(String realm) {
-        return getUsers(new UserQuery().tenant(new TenantPredicate(realm)));
-    }
-
-    @Override
-    public User[] getServiceUsers(String realm) {
-        return new User[0];
-    }
-
-    @Override
-    public User[] getUsers(List<String> userIds) {
-        return getUsers(new UserQuery().ids(userIds.toArray(new String[0])));
-    }
-
-    @Override
-    public User[] getUsers(UserQuery userQuery) {
+    public User[] queryUsers(UserQuery userQuery) {
         return ManagerIdentityProvider.getUsersFromDb(persistenceService, userQuery);
     }
 
@@ -176,17 +161,17 @@ public class ManagerBasicIdentityProvider extends BasicIdentityProvider implemen
             .toArray(Role[]::new);
     }
     public void updateUserAttributes(String realm, String userId, Map<String, List<String>> attributes) {
-        throw new UnsupportedOperationException("This provider does not support updating attributes");
+        throw new UnsupportedOperationException("This provider does not support attributes");
+    }
+
+    @Override
+    public Map<String, List<String>> getUserAttributes(String realm, String userId) {
+        throw new UnsupportedOperationException("This provider does not support attributes");
     }
 
     @Override
     public void updateClientRoles(String realm, String client, Role[] roles) {
         throw new UnsupportedOperationException("This provider does not support updating roles");
-    }
-
-    @Override
-    public void updateRealmRoles(String realm, Role[] roles) {
-        throw new UnsupportedOperationException("This provider does not support updating realm roles");
     }
 
     @Override

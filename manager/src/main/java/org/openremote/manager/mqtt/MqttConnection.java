@@ -8,12 +8,9 @@ import org.openremote.container.security.keycloak.AccessTokenAuthContext;
 import org.openremote.manager.security.ManagerKeycloakIdentityProvider;
 import org.openremote.model.auth.OAuthClientCredentialsGrant;
 import org.openremote.model.auth.OAuthGrant;
-import org.openremote.model.event.shared.SharedEvent;
 import org.openremote.model.util.TextUtil;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.function.Consumer;
+import java.util.Objects;
 import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -26,19 +23,22 @@ import static org.openremote.model.Constants.KEYCLOAK_CLIENT_ID;
 public class MqttConnection {
 
     protected static final Logger LOG = Logger.getLogger(MqttConnection.class.getSimpleName());
-    protected final String realm;
+    protected String realm;
     protected String username; // This is OAuth clientId
     protected String password;
     protected boolean credentials;
     protected final String clientId;
+    protected final boolean cleanSession;
     protected Supplier<String> tokenSupplier;
     protected ManagerKeycloakIdentityProvider identityProvider;
+    protected long connectionTime;
 
-    public MqttConnection(ManagerKeycloakIdentityProvider identityProvider, String clientId, String realm, String username, String password) {
-        this.realm = realm;
+    public MqttConnection(ManagerKeycloakIdentityProvider identityProvider, String clientId, String realm, String username, String password, boolean cleanSession, long connectionTime) {
+        this.cleanSession = cleanSession;
         this.clientId = clientId;
         this.identityProvider = identityProvider;
-        setCredentials(username, password);
+        this.connectionTime = connectionTime;
+        setCredentials(realm, username, password);
     }
 
     public String getRealm() {
@@ -53,12 +53,21 @@ public class MqttConnection {
         return this.password;
     }
 
+    public boolean isCleanSession() {
+        return cleanSession;
+    }
+
     public String getAccessToken() {
         if (tokenSupplier == null) {
             return null;
         }
 
         return tokenSupplier.get();
+    }
+
+    public String getUserId() {
+        AuthContext authContext = getAuthContext();
+        return authContext != null ? authContext.getUserId() : null;
     }
 
     public AuthContext getAuthContext() {
@@ -90,8 +99,9 @@ public class MqttConnection {
         return credentials;
     }
 
-    public void setCredentials(String username, String password) {
+    public void setCredentials(String realm, String username, String password) {
 
+        this.realm = realm;
         this.username = username;
         this.password = password;
 
@@ -111,9 +121,23 @@ public class MqttConnection {
     @Override
     public String toString() {
         return this.getClass().getSimpleName() + "{" +
-            "realm='" + realm + '\'' +
+            "connectionTime=" + connectionTime +
+            ", realm='" + realm + '\'' +
             ", username='" + username + '\'' +
             ", clientId='" + clientId + '\'' +
             '}';
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        MqttConnection that = (MqttConnection) o;
+        return Objects.equals(realm, that.realm) && Objects.equals(username, that.username) && clientId.equals(that.clientId);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(realm, username, clientId);
     }
 }

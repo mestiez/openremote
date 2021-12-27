@@ -19,6 +19,7 @@ import org.openremote.manager.gateway.GatewayService
 import org.openremote.manager.security.ManagerIdentityService
 import org.openremote.manager.security.ManagerKeycloakIdentityProvider
 import org.openremote.manager.setup.SetupService
+import org.openremote.model.security.User
 import org.openremote.test.setup.ManagerTestSetup
 import org.openremote.model.asset.*
 import org.openremote.model.asset.agent.ConnectionStatus
@@ -51,6 +52,7 @@ import java.util.stream.IntStream
 
 import static org.openremote.container.util.MapAccess.getString
 import static org.openremote.manager.gateway.GatewayConnector.mapAssetId
+import static org.openremote.manager.gateway.GatewayService.getGatewayClientId
 import static org.openremote.manager.security.ManagerIdentityProvider.SETUP_ADMIN_PASSWORD
 import static org.openremote.manager.security.ManagerIdentityProvider.SETUP_ADMIN_PASSWORD_DEFAULT
 import static org.openremote.model.Constants.*
@@ -88,7 +90,7 @@ class GatewayTest extends Specification implements ManagerContainerTrait {
 
         then: "a keycloak client should have been created for this gateway"
         conditions.eventually {
-            def client = identityProvider.getClient(managerTestSetup.realmBuildingTenant, GatewayService.GATEWAY_CLIENT_ID_PREFIX + gateway.getId())
+            def client = identityProvider.getClient(managerTestSetup.realmBuildingTenant, getGatewayClientId(gateway.getId()))
             assert client != null
         }
 
@@ -103,7 +105,7 @@ class GatewayTest extends Specification implements ManagerContainerTrait {
         and: "a gateway connector should have been created for this gateway"
         conditions.eventually {
             assert gatewayService.gatewayConnectorMap.size() == 1
-            assert gatewayService.gatewayConnectorMap.get(gateway.getId()).gatewayId == gateway.getId()
+            assert gatewayService.gatewayConnectorMap.get(gateway.getId().toLowerCase(Locale.ROOT)).gatewayId == gateway.getId()
         }
 
         when: "the Gateway client is created"
@@ -117,6 +119,7 @@ class GatewayTest extends Specification implements ManagerContainerTrait {
         gatewayClient.setEncoderDecoderProvider({
             [new AbstractNettyIOClient.MessageToMessageDecoder<String>(String.class, gatewayClient)].toArray(new ChannelHandler[0])
         })
+
 
         and: "we add callback consumers to the client"
         def connectionStatus = gatewayClient.getConnectionStatus()
@@ -535,8 +538,8 @@ class GatewayTest extends Specification implements ManagerContainerTrait {
 
         and: "the gateway connector should be marked as disconnected and the gateway client should have been disconnected"
         conditions.eventually {
-            assert gatewayService.gatewayConnectorMap.get(gateway.getId()).disabled
-            assert !gatewayService.gatewayConnectorMap.get(gateway.getId()).connected
+            assert gatewayService.gatewayConnectorMap.get(gateway.getId().toLowerCase(Locale.ROOT)).disabled
+            assert !gatewayService.gatewayConnectorMap.get(gateway.getId().toLowerCase(Locale.ROOT)).connected
             assert gatewayClient.connectionStatus == ConnectionStatus.CONNECTING
         }
 
@@ -576,14 +579,43 @@ class GatewayTest extends Specification implements ManagerContainerTrait {
         advancePseudoClock(1, TimeUnit.SECONDS, container)
 
         and: "the gateway is enabled again"
-        assetProcessingService.sendAttributeEvent(new AttributeEvent(gateway.getId(), "disabled", false))
+        assetProcessingService.sendAttributeEvent(new AttributeEvent(gateway.getId(), GatewayAsset.DISABLED.getName(), false))
 
         then: "the gateway connector should be enabled"
         conditions.eventually {
-            assert !gatewayService.gatewayConnectorMap.get(gateway.getId()).disabled
+            assert !gatewayService.gatewayConnectorMap.get(gateway.getId().toLowerCase(Locale.ROOT)).disabled
         }
 
-        and: "the gateway client reconnects"
+        when: "the gateway asset client secret attribute is updated"
+        def newSecret = UniqueIdentifierGenerator.generateId()
+        assetProcessingService.sendAttributeEvent(new AttributeEvent(gateway.getId(), GatewayAsset.CLIENT_SECRET, newSecret))
+
+        then: "the service user secret should be updated"
+        conditions.eventually {
+            gateway = assetStorageService.find(gateway.getId()) as GatewayAsset
+            assert gateway.getClientSecret().orElse(null) == newSecret
+            def user = identityProvider.getUserByUsername(gateway.getRealm(), User.SERVICE_ACCOUNT_PREFIX + gateway.getClientId().orElse(""))
+            assert user != null
+            assert user.secret == newSecret
+        }
+
+        when: "the gateway client reconnects with the new secret"
+        gatewayClient = new WebsocketIOClient<String>(
+                new URIBuilder("ws://127.0.0.1:$serverPort/websocket/events?Auth-Realm=$managerTestSetup.realmBuildingTenant").build(),
+                null,
+                new OAuthClientCredentialsGrant("http://127.0.0.1:$serverPort/auth/realms/$managerTestSetup.realmBuildingTenant/protocol/openid-connect/token",
+                        gateway.getClientId().orElse(""),
+                        gateway.getClientSecret().orElse(""),
+                        null).setBasicAuthHeader(true))
+        gatewayClient.setEncoderDecoderProvider({
+            [new AbstractNettyIOClient.MessageToMessageDecoder<String>(String.class, gatewayClient)].toArray(new ChannelHandler[0])
+        })
+        gatewayClient.addMessageConsumer({
+            message -> clientReceivedMessages.add(message)
+        })
+        gatewayClient.addConnectionStatusConsumer({
+            status -> connectionStatus = status
+        })
         gatewayClient.connect()
 
         then: "the gateway netty client status should become CONNECTED"
@@ -717,7 +749,7 @@ class GatewayTest extends Specification implements ManagerContainerTrait {
         then: "the keycloak client should also be removed"
         assert deleted
         conditions.eventually {
-            assert identityProvider.getClient(managerTestSetup.realmBuildingTenant, GatewayService.GATEWAY_CLIENT_ID_PREFIX + gateway.getId()) == null
+            assert identityProvider.getClient(managerTestSetup.realmBuildingTenant, getGatewayClientId(gateway.getId())) == null
         }
 
         cleanup: "cleanup the gateway client"
@@ -771,7 +803,7 @@ class GatewayTest extends Specification implements ManagerContainerTrait {
         and: "a gateway connector should have been created for this gateway"
         conditions.eventually {
             assert gatewayService.gatewayConnectorMap.size() == 1
-            assert gatewayService.gatewayConnectorMap.get(gateway.getId()).gatewayId == gateway.getId()
+            assert gatewayService.gatewayConnectorMap.get(gateway.getId().toLowerCase(Locale.ROOT)).gatewayId == gateway.getId()
         }
 
         when: "a gateway client connection is created to connect the city realm to the gateway in the building realm"

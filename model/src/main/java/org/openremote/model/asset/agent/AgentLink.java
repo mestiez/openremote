@@ -60,12 +60,16 @@ public abstract class AgentLink<T extends AgentLink<?>> implements Serializable 
     @JsonPropertyDescription("String to be used for attribute writes and can contain '" + Protocol.DYNAMIC_VALUE_PLACEHOLDER +
         "' placeholders to allow the written value to be injected into the string or to even hardcode the value written to the" +
         " protocol (particularly useful for executable attributes)")
+    @JsonSchemaFormat("or-multiline")
     protected String writeValue;
     @JsonPropertyDescription("The predicate to apply to incoming messages to determine if the message is intended for the" +
-        " linked attribute; the value used in the predicate can be filtered using the message match filters")
+        " linked attribute; the value used in the predicate can be filtered using the message match filters. This must be defined to" +
+        " enable attributes to be updated by the linked agent.")
     protected ValuePredicate messageMatchPredicate;
     @JsonPropertyDescription("ValueFilters to apply to incoming messages prior to comparison with the messageMatchPredicate")
     protected ValueFilter[] messageMatchFilters;
+    @JsonPropertyDescription("Don't expect a response from the protocol just update the attribute immediately on write")
+    protected Boolean updateOnWrite;
 
     @JsonSerialize
     protected String getType() {
@@ -108,6 +112,10 @@ public abstract class AgentLink<T extends AgentLink<?>> implements Serializable 
         return Optional.ofNullable(messageMatchFilters);
     }
 
+    public Optional<Boolean> getUpdateOnWrite() {
+        return Optional.ofNullable(updateOnWrite);
+    }
+
     @SuppressWarnings("unchecked")
     public T setValueFilters(ValueFilter[] valueFilters) {
         this.valueFilters = valueFilters;
@@ -141,6 +149,12 @@ public abstract class AgentLink<T extends AgentLink<?>> implements Serializable 
     @SuppressWarnings("unchecked")
     public T setMessageMatchFilters(ValueFilter[] messageMatchFilters) {
         this.messageMatchFilters = messageMatchFilters;
+        return (T)this;
+    }
+
+    @SuppressWarnings("unchecked")
+    public T setUpdateOnWrite(Boolean updateOnWrite) {
+        this.updateOnWrite = updateOnWrite;
         return (T)this;
     }
 

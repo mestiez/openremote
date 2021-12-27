@@ -28,6 +28,7 @@ import org.openremote.model.asset.agent.Agent;
 import org.openremote.model.query.filter.*;
 import org.openremote.model.util.ValueUtil;
 
+import java.io.Serializable;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.stream.Collectors;
@@ -35,8 +36,8 @@ import java.util.stream.Collectors;
 /**
  * Encapsulate asset query restriction, projection, and ordering of results.
  */
-// TODO: Add AssetQuery support for arbitrary attribute property path amd value (e.g. attributes.consoleProviders.geofence.version == "ORConsole")
-public class AssetQuery {
+// TODO: Add AssetQuery support for arbitrary attribute property path and value (e.g. attributes.consoleProviders.geofence.version == "ORConsole")
+public class AssetQuery implements Serializable {
 
     public static class Select {
 
@@ -342,7 +343,8 @@ public class AssetQuery {
     }
 
     @SuppressWarnings("unchecked")
-    public AssetQuery types(AssetDescriptor<? extends Asset<?>>... types) {
+    @SafeVarargs
+    public final AssetQuery types(AssetDescriptor<? extends Asset<?>>... types) {
         if (types == null || types.length == 0) {
             this.types = null;
             return this;
@@ -401,7 +403,7 @@ public class AssetQuery {
     }
 
     public AssetQuery attributeValue(String name) {
-        return attributeValue(name, new ValueNotEmptyPredicate());
+        return attributeValue(name, new ValueEmptyPredicate().negate(true));
     }
 
     public AssetQuery attributeValue(String name, boolean b) {

@@ -21,6 +21,8 @@ package org.openremote.model.query.filter;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.kjetland.jackson.jsonSchema.annotations.JsonSchemaDescription;
+import com.kjetland.jackson.jsonSchema.annotations.JsonSchemaTitle;
 import com.vividsolutions.jts.geom.Coordinate;
 import com.vividsolutions.jts.geom.Envelope;
 import org.openremote.model.geo.GeoJSONPoint;
@@ -30,6 +32,12 @@ import java.util.Objects;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
+/**
+ * Predicate for GEO JSON point values; will return true if the point is within the specified rectangle specified as
+ * latitude and longitude values of two corners unless negated.
+ */
+@JsonSchemaTitle("Rectangular geofence")
+@JsonSchemaDescription("Predicate for GEO JSON point values; will return true if the point is within the specified rectangle specified as latitude and longitude values of two corners unless negated.")
 public class RectangularGeofencePredicate extends GeofencePredicate {
 
     public static final String name = "rect";
@@ -37,6 +45,9 @@ public class RectangularGeofencePredicate extends GeofencePredicate {
     public double lngMin;
     public double latMax;
     public double lngMax;
+
+    public RectangularGeofencePredicate() {
+    }
 
     @JsonCreator
     public RectangularGeofencePredicate(@JsonProperty("latMin") double latMin,
@@ -60,7 +71,7 @@ public class RectangularGeofencePredicate extends GeofencePredicate {
 
     @Override
     public RectangularGeofencePredicate negate() {
-        negated = true;
+        negated = !negated;
         return this;
     }
 
@@ -103,7 +114,7 @@ public class RectangularGeofencePredicate extends GeofencePredicate {
         double y = (latMin + latMax) / 2;
         return new double[]{x, y};
     }
-    
+
     @Override
     public Predicate<Object> asPredicate(Supplier<Long> currentMillisSupplier) {
         return obj -> {
@@ -112,7 +123,7 @@ public class RectangularGeofencePredicate extends GeofencePredicate {
             Coordinate coordinate;
 
             if (obj instanceof Coordinate) {
-                coordinate = (Coordinate)obj;
+                coordinate = (Coordinate) obj;
             } else {
                 coordinate = ValueUtil.getValue(obj, GeoJSONPoint.class).map(GeoJSONPoint::getCoordinates).orElse(null);
             }

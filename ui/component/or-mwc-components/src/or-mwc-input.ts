@@ -1,8 +1,8 @@
 import {css, html, LitElement, PropertyValues, TemplateResult, unsafeCSS} from "lit";
 import {customElement, property, state} from "lit/decorators.js";
 import {Ref, ref, createRef} from "lit/directives/ref.js";
-import {classMap} from "lit/directives/class-map";
-import {ifDefined} from "lit/directives/if-defined";
+import {classMap} from "lit/directives/class-map.js";
+import {ifDefined} from "lit/directives/if-defined.js";
 import {MDCTextField} from "@material/textfield";
 import {MDCComponent} from "@material/base";
 import {MDCRipple} from "@material/ripple";
@@ -59,6 +59,7 @@ const lineRippleStyle = require("@material/line-ripple/dist/mdc.line-ripple.css"
 const floatingLabelStyle = require("@material/floating-label/dist/mdc.floating-label.css");
 const formFieldStyle = require("@material/form-field/dist/mdc.form-field.css");
 const checkboxStyle = require("@material/checkbox/dist/mdc.checkbox.css");
+const radioStyle = require("@material/radio/dist/mdc.radio.css");
 const switchStyle = require("@material/switch/dist/mdc.switch.css");
 const selectStyle = require("@material/select/dist/mdc.select.css");
 const listStyle = require("@material/list/dist/mdc.list.css");
@@ -490,7 +491,10 @@ const style = css`
         height: 32px;
         width: 32px;
     }
-    
+    .mdc-radio-container {
+        display: flex;
+        flex-direction: column;
+    }
     .mdc-text-field.mdc-text-field--invalid:not(.mdc-text-field--disabled) + .mdc-text-field-helper-line .mdc-text-field-helper-text {
         color: var(--mdc-theme-error, #b00020)
     }
@@ -509,7 +513,7 @@ const style = css`
 
     ::-webkit-clear-button {display: none;}
     ::-webkit-inner-spin-button { display: none; }
-    ::-webkit-datetime-edit { padding: 0em;}
+    ::-webkit-datetime-edit { padding: 0em; }
     ::-webkit-datetime-edit-text { padding: 0; }
 
     .mdc-text-field--focused:not(.mdc-text-field--disabled) .mdc-floating-label {
@@ -565,8 +569,12 @@ const style = css`
     .mdc-switch {
         margin: 0 24px;
     }
+
+    .mdc-switch--full-width {
+        margin-left: auto;
+    }
     
-    #field {
+        #field {
         height: 100%;
     }
 
@@ -589,6 +597,7 @@ export class OrMwcInput extends LitElement {
             css`${unsafeCSS(floatingLabelStyle)}`,
             css`${unsafeCSS(formFieldStyle)}`,
             css`${unsafeCSS(checkboxStyle)}`,
+            css`${unsafeCSS(radioStyle)}`,
             css`${unsafeCSS(switchStyle)}`,
             css`${unsafeCSS(selectStyle)}`,
             css`${unsafeCSS(listStyle)}`,
@@ -607,6 +616,9 @@ export class OrMwcInput extends LitElement {
 
     @property({type: String})
     public type?: InputType;
+
+    @property({type: String})
+    public name?: String;
 
     @property({type: Boolean})
     public readonly: boolean = false;
@@ -706,7 +718,7 @@ export class OrMwcInput extends LitElement {
     @property({type: Boolean})
     public helperPersistent: boolean = false;
 
-    @property({type: String})
+    @property({type: String, attribute: true})
     public validationMessage?: string;
 
     @property({type: Boolean})
@@ -735,6 +747,8 @@ export class OrMwcInput extends LitElement {
     protected _tempValue: any;
     @state()
     protected isUiValid = true;
+    @state()
+    protected errorMessage?: string;
 
     disconnectedCallback(): void {
         super.disconnectedCallback();
@@ -792,6 +806,7 @@ export class OrMwcInput extends LitElement {
         }
     }
 
+
     protected render() {
 
         if (this.type) {
@@ -799,9 +814,9 @@ export class OrMwcInput extends LitElement {
             const showLabel = !this.fullWidth && this.label;
             let outlined = !this.fullWidth && this.outlined;
             let hasHelper = !!this.helperText;
-            const showValidationMessage = !this.isUiValid && !!this.validationMessage;
+            const showValidationMessage = !this.isUiValid && (!!this.errorMessage || !!this.validationMessage);
             const helperClasses = {
-                "mdc-text-field-helper-text--persistent": this.helperPersistent,
+                "mdc-text-field-helper-text--persistent": !showValidationMessage && this.helperPersistent,
                 "mdc-text-field-helper-text--validation-msg": showValidationMessage,
             };
             const hasValue = this.value || this.value === false;
@@ -809,13 +824,51 @@ export class OrMwcInput extends LitElement {
 
             switch (this.type) {
                 case InputType.RADIO:
-                    return html`RADIO`
+                    const optsRadio = this.resolveOptions(this.options);
+                    this._selectedIndex = -1;
+                    return html`
+                            <div class="mdc-radio-container">
+                                ${optsRadio ? optsRadio.map(([optValue, optDisplay], index) => {
+                                    if (this.value === optValue) {
+                                        this._selectedIndex = index;
+                                    }
+                                    return html`
+                                    <div id="field" class="mdc-form-field">
+                                        <div class="mdc-radio">
+                                            <input type="radio" 
+                                                id="elem-${optValue}"
+                                                name="${ifDefined(this.name)}"
+                                                value="${optValue}"
+                                                ?checked="${this.value && this.value.includes(optValue)}"
+                                                ?required="${this.required}"
+                                                ?disabled="${this.disabled || this.readonly}"                            
+                                                @change="${(e: Event) => this.onValueChange((e.target as HTMLInputElement), (e.target as HTMLInputElement).value)}"
+                                                class="mdc-radio__native-control"/>
+                                            <div class="mdc-radio__background">
+                                            <div class="mdc-radio__outer-circle"></div>
+                                            <div class="mdc-radio__inner-circle"></div>
+                                            </div>
+                                            <div class="mdc-radio__ripple"></div>
+                                        </div>
+                                        <label for="elem-${optValue}"><or-translate value="${optDisplay}"></or-translate></label>
+                                    </div>
+
+                                    `;
+                                }) : ``}
+                            </div>
+                    `;
                     break;
                 case InputType.SWITCH:
+                    const classesSwitch = {
+                        "mdc-switch--disabled": this.disabled || this.readonly,
+                        "mdc-switch--full-width": this.fullWidth,
+                        "mdc-switch--checked": this.value,
+                    };
+
                     return html`
                         <span id="wrapper">
                             ${this.label ? html`<label for="elem" class="${this.disabled ? "mdc-switch--disabled" : ""}">${this.label}</label>` : ``}
-                            <div id="component" class="mdc-switch ${this.disabled || this.readonly ? "mdc-switch--disabled" : ""} ${this.value ? "mdc-switch--checked" : ""}">
+                            <div id="component" class="mdc-switch ${classMap(classesSwitch)}">
                                 <div class="mdc-switch__track"></div>
                                 <div class="mdc-switch__thumb-underlay">
                                     <div class="mdc-switch__thumb">
@@ -970,7 +1023,7 @@ export class OrMwcInput extends LitElement {
                             </div>
                                 ${hasHelper || showValidationMessage ? html`
                                     <p id="component-helper-text" class="mdc-select-helper-text ${classMap(helperClasses)}" aria-hidden="true">
-                                        ${showValidationMessage ? this.validationMessage : this.helperText}
+                                        ${showValidationMessage ? this.errorMessage || this.validationMessage : this.helperText}
                                     </p>` : ``}
                         </div>
                     `;
@@ -1013,11 +1066,11 @@ export class OrMwcInput extends LitElement {
                 }
                 case InputType.CHECKBOX_LIST:
 
-                    const optsRadio = this.resolveOptions(this.options);
+                    const optsCheckboxList = this.resolveOptions(this.options);
                     this._selectedIndex = -1;
                     return html`
                             <div class="mdc-checkbox-list">
-                                ${optsRadio ? optsRadio.map(([optValue, optDisplay], index) => {
+                                ${optsCheckboxList ? optsCheckboxList.map(([optValue, optDisplay], index) => {
                                     if (this.value === optValue) {
                                         this._selectedIndex = index;
                                     }
@@ -1199,7 +1252,7 @@ export class OrMwcInput extends LitElement {
                             </label>
                             ${hasHelper || showValidationMessage ? html`
                                 <div class="mdc-text-field-helper-line">
-                                    <div class="mdc-text-field-helper-text ${classMap(helperClasses)}">${showValidationMessage ? this.validationMessage : this.helperText}</div>
+                                    <div class="mdc-text-field-helper-text ${classMap(helperClasses)}">${showValidationMessage ? this.errorMessage || this.validationMessage : this.helperText}</div>
                                     ${this.charCounter && !this.readonly ? html`<div class="mdc-text-field-character-counter"></div>` : ``}
                                 </div>
                             ` : ``}
@@ -1392,7 +1445,7 @@ export class OrMwcInput extends LitElement {
                     (this._mdcComponent as MDCSelect).layoutOptions();
                 }
                 (this._mdcComponent as MDCSelect).useDefaultValidation = !this.multiple;
-                (this._mdcComponent as MDCSelect).valid = (!this.multiple && (this._mdcComponent as MDCSelect).valid) || (this.multiple && this.required && Array.isArray(this.value) && (this.value as []).length > 0);
+                (this._mdcComponent as MDCSelect).valid = !this.required || (!this.multiple && (this._mdcComponent as MDCSelect).valid) || (this.multiple && Array.isArray(this.value) && (this.value as []).length > 0);
                 const selectedText = this.getSelectedTextValue();
                 (this._mdcComponent as any).foundation.adapter.setSelectedText(selectedText);
                 (this._mdcComponent as any).foundation.adapter.floatLabel(!!selectedText);
@@ -1411,7 +1464,9 @@ export class OrMwcInput extends LitElement {
                 checkbox.disabled = this.disabled || this.readonly;
             }
 
-            (this._mdcComponent as any).required = !!this.required;
+            if (this._mdcComponent) {
+                (this._mdcComponent as any).required = this.required;
+            }
         }
 
         if (this.autoValidate) {
@@ -1434,7 +1489,7 @@ export class OrMwcInput extends LitElement {
     }
 
     public setCustomValidity(msg: string | undefined) {
-        this.validationMessage = msg;
+        this.errorMessage = msg;
         const elem = this.shadowRoot!.getElementById("elem") as HTMLElement;
         if (elem && (elem as any).setCustomValidity) {
             (elem as any).setCustomValidity(msg ?? "");
@@ -1522,7 +1577,6 @@ export class OrMwcInput extends LitElement {
                     break;
             }
         }
-
         this.value = newValue;
         this.setCustomValidity(errorMsg);
         this.reportValidity();

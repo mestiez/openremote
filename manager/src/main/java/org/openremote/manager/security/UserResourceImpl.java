@@ -23,6 +23,8 @@ import org.openremote.container.security.AuthContext;
 import org.openremote.container.timer.TimerService;
 import org.openremote.manager.web.ManagerWebResource;
 import org.openremote.model.http.RequestParams;
+import org.openremote.model.query.UserQuery;
+import org.openremote.model.query.filter.TenantPredicate;
 import org.openremote.model.security.*;
 
 import javax.ws.rs.*;
@@ -39,42 +41,44 @@ public class UserResourceImpl extends ManagerWebResource implements UserResource
     }
 
     @Override
-    public User[] getAll(RequestParams requestParams, String realm) {
+    public User[] query(RequestParams requestParams, UserQuery query) {
         AuthContext authContext = getAuthContext();
         boolean isAdmin = authContext.hasResourceRole(ClientRole.READ_ADMIN.getValue(), authContext.getClientId());
-        boolean isBasicRead = authContext.hasResourceRole(ClientRole.READ_USERS.getValue(), authContext.getClientId());
+        boolean isRestricted = !isAdmin && authContext.hasResourceRole(ClientRole.READ_USERS.getValue(), authContext.getClientId());
 
-        if (!isAdmin && !isBasicRead) {
+        if (!isAdmin && !isRestricted) {
              throw new ForbiddenException("Insufficient permissions to read users");
         }
 
-        try {
-            User[] users = identityService.getIdentityProvider().getUsers(
-                realm
-            );
+        if (query == null) {
+            query = new UserQuery();
+        }
 
-            if (isAdmin) {
-                return users;
-            } else {
-                return Arrays.stream(users)
-                    .map(user ->
-                        new User()
-                            .setUsername(user.getUsername())
-                            .setId(user.getId())
-                            .setFirstName(user.getFirstName())
-                            .setLastName(user.getLastName()))
-                    .toArray(User[]::new);
+        if (isRestricted) {
+            if (query.select == null) {
+                query.select = new UserQuery.Select();
             }
+            query.select.basic(true);
+        }
+
+        if (!authContext.isSuperUser()) {
+            // Force realm to match users
+            query.tenant(new TenantPredicate(authContext.getAuthenticatedRealm()));
+
+            // Hide system service accounts from non super users
+            if (query.select == null) {
+                query.select = new UserQuery.Select();
+            }
+            query.select.excludeSystemUsers = true;
+        }
+
+        try {
+            return identityService.getIdentityProvider().queryUsers(query);
         } catch (ClientErrorException ex) {
             throw new WebApplicationException(ex.getCause(), ex.getResponse().getStatus());
         } catch (Exception ex) {
             throw new WebApplicationException(ex);
         }
-    }
-
-    @Override
-    public User[] getAllService(RequestParams requestParams, String realm) {
-        return identityService.getIdentityProvider().getServiceUsers(realm);
     }
 
     @Override
@@ -278,19 +282,6 @@ public class UserResourceImpl extends ManagerWebResource implements UserResource
     }
 
     @Override
-    public Role[] getRealmRoles(RequestParams requestParams, String realm) {
-        try {
-            return identityService.getIdentityProvider().getRoles(
-                    realm,
-                    null);
-        } catch (ClientErrorException ex) {
-            throw new WebApplicationException(ex.getCause(), ex.getResponse().getStatus());
-        } catch (Exception ex) {
-            throw new WebApplicationException(ex);
-        }
-    }
-
-    @Override
     public void updateRoles(RequestParams requestParams, String realm, Role[] roles) {
         updateClientRoles(requestParams, realm, roles, KEYCLOAK_CLIENT_ID);
     }
@@ -302,20 +293,6 @@ public class UserResourceImpl extends ManagerWebResource implements UserResource
                 realm,
                 clientId,
                 roles);
-        } catch (ClientErrorException ex) {
-            ex.printStackTrace(System.out);
-            throw new WebApplicationException(ex.getCause(), ex.getResponse().getStatus());
-        } catch (Exception ex) {
-            throw new NotFoundException(ex);
-        }
-    }
-
-    @Override
-    public void updateRealmRoles(RequestParams requestParams, String realm, Role[] roles) {
-        try {
-            identityService.getIdentityProvider().updateRealmRoles(
-                    realm,
-                    roles);
         } catch (ClientErrorException ex) {
             ex.printStackTrace(System.out);
             throw new WebApplicationException(ex.getCause(), ex.getResponse().getStatus());

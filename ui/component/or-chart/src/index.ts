@@ -37,7 +37,8 @@ import {getContentWithMenuTemplate} from "@openremote/or-mwc-components/or-mwc-m
 import ChartAnnotation, { AnnotationOptions } from "chartjs-plugin-annotation";
 import "chartjs-adapter-moment";
 import {GenericAxiosResponse } from "@openremote/rest";
-import {OrMwcAttributeSelector, OrAddAttributeRefsEvent} from "@openremote/or-mwc-components/or-mwc-dialog";
+import {OrAttributePicker, OrAttributePickerPickedEvent} from "@openremote/or-attribute-picker";
+import { showDialog } from "@openremote/or-mwc-components/or-mwc-dialog";
 
 Chart.register(LineController, ScatterController, LineElement, PointElement, LinearScale, TimeScale, Title, Filler, Legend, Tooltip, ChartAnnotation);
 
@@ -598,10 +599,7 @@ export class OrChart extends translate(i18next)(LitElement) {
                             `
                         })}
                     </div>
-                    <or-mwc-input class="button" .type="${InputType.BUTTON}" ?disabled="${disabled}" label="${i18next.t("addAttribute")}" icon="plus" @click="${() => this._openDialog()}"></or-mwc-input>
-                    <div id="mdc-dialog">
-                        <or-mwc-attribute-selector id="attribute-selector-dialog"></or-mwc-attribute-selector>
-                    </div>
+                    <or-mwc-input class="button" .type="${InputType.BUTTON}" ?disabled="${disabled}" label="${i18next.t("selectAttributes")}" icon="plus" @click="${() => this._openDialog()}"></or-mwc-input>
                 </div>
             </div>
         `;
@@ -710,7 +708,7 @@ export class OrChart extends translate(i18next)(LitElement) {
             return;
         }
 
-        const view = config && config.views ? config.views[viewSelector][this.panelName] : undefined;
+        const view = config && config.views && config.views[viewSelector] ? config.views[viewSelector][this.panelName] : undefined;
 
         if (!view) {
             return;
@@ -792,9 +790,12 @@ export class OrChart extends translate(i18next)(LitElement) {
             config = {
                 realm: this.realm,
                 views: {
-                    [viewSelector]: {}
                 }
             }
+        }
+
+        if (!config.views[viewSelector]) {
+            config.views[viewSelector] = {};
         }
 
         if (!this.assets || !this.assetAttributes || this.assets.length === 0 || this.assetAttributes.length === 0) {
@@ -816,16 +817,12 @@ export class OrChart extends translate(i18next)(LitElement) {
     }
     
     _openDialog() {
-        const hostElement = document.body;
-        const dialog = new OrMwcAttributeSelector();
-        dialog.showOnlyDatapointAttrs = true;
-        dialog.multiSelect = true;
-        dialog.selectedAttributes = this._getSelectedAttributes();
-        dialog.isOpen = true;
-        dialog.addEventListener(OrAddAttributeRefsEvent.NAME, (ev: any) => this._addAttribute(ev.detail.selectedAttributes));
+        const dialog = showDialog(new OrAttributePicker()
+            .setShowOnlyDatapointAttrs(true)
+            .setMultiSelect(true)
+            .setSelectedAttributes(this._getSelectedAttributes()));
 
-        hostElement.append(dialog);
-        return dialog;
+        dialog.addEventListener(OrAttributePickerPickedEvent.NAME, (ev: any) => this._addAttribute(ev.detail));
     }
 
     protected async _addAttribute(selectedAttrs?: AttributeRef[]) {

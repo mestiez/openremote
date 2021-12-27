@@ -117,10 +117,6 @@ public abstract class AbstractProtocol<T extends Agent<T, ?, U>, U extends Agent
                                     LOG.info("Attempt to write to attribute that is not actually linked to this protocol '" + AbstractProtocol.this + "': " + linkedAttribute);
                                     return;
                                 }
-                                if (linkedAttribute.getMetaValue(MetaItemType.READ_ONLY).orElse(false)) {
-                                    LOG.info("Attempt to write to readonly attribute: " + linkedAttribute);
-                                    return;
-                                }
 
                                 processLinkedAttributeWrite(event);
                             });
@@ -217,10 +213,12 @@ public abstract class AbstractProtocol<T extends Agent<T, ?, U>, U extends Agent
                 LOG.warning("Attribute not linked to protocol '" + this + "':" + event);
             } else {
 
+                AgentLink<?> agentLink = agent.getAgentLink(attribute);
+
                 Pair<Boolean, Object> ignoreAndConverted = ProtocolUtil.doOutboundValueProcessing(
                     event.getAssetId(),
                     attribute,
-                    agent.getAgentLink(attribute),
+                    agentLink,
                     event.getValue().orElse(null),
                     dynamicAttributes.contains(event.getAttributeRef()));
 
@@ -230,6 +228,10 @@ public abstract class AbstractProtocol<T extends Agent<T, ?, U>, U extends Agent
                 }
 
                 doLinkedAttributeWrite(attribute, agent.getAgentLink(attribute), event, ignoreAndConverted.value);
+
+                if (agent.isUpdateOnWrite().orElse(false) || agentLink.getUpdateOnWrite().orElse(false)) {
+                    updateLinkedAttribute(new AttributeState(event.getAttributeRef(), ignoreAndConverted.value));
+                }
             }
         });
     }

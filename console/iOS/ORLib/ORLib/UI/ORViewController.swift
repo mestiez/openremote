@@ -38,16 +38,13 @@ open class ORViewcontroller : UIViewController {
     public var geofenceProvider: GeofenceProvider?
     public var pushProvider: PushNotificationProvider?
     public var storageProvider: StorageProvider?
+    public var qrProvider: QrScannerProvider?
 
     var popoverOptions: [PopoverOption]?
     
     open override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = UIColor.white
-    }
-    
-    open override func viewWillAppear(_ animated: Bool) {
-        super.viewWillAppear(animated)
         self.configureAccess()
     }
 
@@ -67,6 +64,7 @@ open class ORViewcontroller : UIViewController {
             let returnMessage = "OpenRemoteConsole._handleProviderResponse('\(theJSONText ?? "null")')"
             DispatchQueue.main.async {
                 self.myWebView?.evaluateJavaScript("\(returnMessage)", completionHandler: { (any, error) in
+                    print(error)
                     print("JSON string = \(theJSONText!)")
                 })
             }
@@ -353,6 +351,28 @@ extension ORViewcontroller: WKScriptMessageHandler {
                                         if let retrieveData = storageProvider?.retrieve(key: key) {
                                             sendData(data: retrieveData)
                                         }
+                                    }
+                                default:
+                                    print("Wrong action \(action) for \(provider)")
+                                }
+                            case Providers.qr:
+                                switch (action) {
+                                case Actions.providerInit:
+                                    qrProvider = QrScannerProvider()
+                                    qrProvider!.initialize(callback: { initializeData in
+                                        self.sendData(data: initializeData)
+                                    })
+                                case Actions.providerEnable:
+                                    qrProvider?.enable(callback: { enableData in
+                                        self.sendData(data: enableData)
+                                    })
+                                case Actions.providerDisable:
+                                    if let disableData = qrProvider?.disable() {
+                                        sendData(data: disableData)
+                                    }
+                                case Actions.scanQr:
+                                    qrProvider?.startScanner(currentViewController: self) { scannedData in
+                                        self.sendData(data: scannedData)
                                     }
                                 default:
                                     print("Wrong action \(action) for \(provider)")

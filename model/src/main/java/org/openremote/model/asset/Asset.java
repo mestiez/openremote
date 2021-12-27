@@ -79,7 +79,7 @@ import static org.openremote.model.Constants.PERSISTENCE_UNIQUE_ID_GENERATOR;
  * obviously no validation can be performed on such dynamic {@link Attribute}s. Use the {@link Attribute} etc. class to
  * work with this API. This property can be empty when certain optimized loading operations are used.
  * <p>
- * For more details on restricted access of user-assigned assets, see {@link UserAsset}.
+ * For more details on restricted access of user-assigned assets, see {@link UserAssetLink}.
  * </p>
  * <p>
  * Example JSON representation of an asset tree:
@@ -584,7 +584,7 @@ public abstract class Asset<T extends Asset<?>> implements IdentifiableEntity<T>
 
 
     public T setLocation(GeoJSONPoint location) {
-        getAttributes().addOrReplace(new Attribute<>(LOCATION, location));
+        getAttributes().getOrCreate(LOCATION).setValue(location);
         return (T) this;
     }
 
@@ -622,7 +622,6 @@ public abstract class Asset<T extends Asset<?>> implements IdentifiableEntity<T>
         return getAttributes().getValue(MANUFACTURER);
     }
 
-
     public T setManufacturer(String manufacturer) {
         getAttributes().getOrCreate(MANUFACTURER).setValue(manufacturer);
         return (T) this;
@@ -631,7 +630,6 @@ public abstract class Asset<T extends Asset<?>> implements IdentifiableEntity<T>
     public Optional<String> getModel() {
         return getAttributes().getValue(MODEL);
     }
-
 
     public T setModel(String model) {
         getAttributes().getOrCreate(MODEL).setValue(model);

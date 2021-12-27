@@ -80,18 +80,12 @@ create table TENANT_RULESET (
   primary key (ID)
 );
 
-create table USER_ASSET (
+create table USER_ASSET_LINK (
   ASSET_ID   char(22)                 not null,
   REALM      varchar(255)             not null,
   USER_ID    varchar(36)              not null,
   CREATED_ON timestamp with time zone not null,
   primary key (ASSET_ID, REALM, USER_ID)
-);
-
-create table USER_CONFIGURATION (
-  USER_ID    varchar(36) not null,
-  RESTRICTED boolean     not null,
-  primary key (USER_ID)
 );
 
 create table NOTIFICATION (
@@ -155,6 +149,21 @@ create table CONSOLE_APP_CONFIG (
     primary key (ID)
 );
 
+create table PROVISIONING_CONFIG (
+  ID                    int8                     not null,
+  CREATED_ON            timestamp with time zone not null,
+  DISABLED              boolean                  not null default false,
+  LAST_MODIFIED         timestamp with time zone not null,
+  NAME                  varchar(255)             not null,
+  TYPE                  varchar(100)             not null,
+  ROLES                 varchar(255)[]           null,
+  REALM                 varchar(255)             not null,
+  ASSET_TEMPLATE        text                     null,
+  RESTRICTED_USER       boolean                  not null default false,
+  DATA                  jsonb,
+  primary key (ID)
+);
+
 /*
   ############################# FUNCTIONS #############################
  */
@@ -202,17 +211,17 @@ alter table TENANT_RULESET
 alter table ASSET_RULESET
   add foreign key (ASSET_ID) references ASSET (ID) on delete cascade;
 
-alter table USER_CONFIGURATION
+alter table USER_ASSET_LINK
   add foreign key (USER_ID) references PUBLIC.USER_ENTITY (ID) on delete cascade;
 
-alter table USER_ASSET
-  add foreign key (USER_ID) references PUBLIC.USER_ENTITY (ID) on delete cascade;
-
-alter table USER_ASSET
+alter table USER_ASSET_LINK
   add foreign key (ASSET_ID) references ASSET (ID) on delete cascade;
 
-alter table USER_ASSET
+alter table USER_ASSET_LINK
   add foreign key (REALM) references PUBLIC.REALM (NAME) on delete cascade;
+
+alter table PROVISIONING_CONFIG
+    add foreign key (REALM) references PUBLIC.REALM (NAME);
 
 /*
   ############################# INDICES #############################

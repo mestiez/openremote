@@ -21,7 +21,7 @@ import {style} from "./style";
 import manager, {AssetModelUtil, EventCallback, OREvent, subscribe, Util} from "@openremote/core";
 import {InputType, OrMwcInput} from "@openremote/or-mwc-components/or-mwc-input";
 import Qs from "qs";
-import {getAssetDescriptorIconTemplate} from "@openremote/or-icon";
+import {getAssetDescriptorIconTemplate, OrIcon} from "@openremote/or-icon";
 import "@openremote/or-mwc-components/or-mwc-menu";
 import {getContentWithMenuTemplate} from "@openremote/or-mwc-components/or-mwc-menu";
 import {ListItem} from "@openremote/or-mwc-components/or-mwc-list";
@@ -58,12 +58,18 @@ export interface AssetTreeConfig {
     };
 }
 
+interface AssetWithReparentId extends Asset {
+    reparentId?: string | null;
+}
+
 export interface UiAssetTreeNode extends AssetTreeNode {
     selected: boolean;
     expandable: boolean;
     expanded: boolean;
     parent: UiAssetTreeNode;
     children: UiAssetTreeNode[];
+    someChildrenSelected: boolean;
+    allChildrenSelected: boolean;
 }
 
 export interface NodeSelectEventDetail {
@@ -246,13 +252,21 @@ export class OrAssetTree extends subscribe(manager)(LitElement) {
     @property({type: String})
     public sortBy?: string = "name";
 
+    @property({type: Boolean})
+    public expandNodes?: boolean = false;
+
+    @property({type: Boolean})
+    public checkboxes?: boolean = false;
+
     protected config?: AssetTreeConfig;
 
     @property({attribute: false})
     protected _nodes?: UiAssetTreeNode[];
 
+    protected _loading: boolean = false;
     protected _connected: boolean = false;
     protected _selectedNodes: UiAssetTreeNode[] = [];
+    protected _expandedNodes: UiAssetTreeNode[] = [];
     protected _initCallback?: EventCallback;
 
     public get selectedNodes(): UiAssetTreeNode[] {
@@ -344,7 +358,7 @@ export class OrAssetTree extends subscribe(manager)(LitElement) {
             this._nodes = undefined;
         }
 
-        if (!this._nodes || this._nodes.length === 0) {
+        if (!this._nodes) {
             this._loadAssets();
             return true;
         }
@@ -376,6 +390,7 @@ export class OrAssetTree extends subscribe(manager)(LitElement) {
                 actuallySelectedIds.push(node.asset!.id!);
                 selectedNodes.push(node);
                 node.selected = true;
+
                 // Expand every ancestor
                 let parent = node.parent;
                 while (parent) {
@@ -384,6 +399,26 @@ export class OrAssetTree extends subscribe(manager)(LitElement) {
                 }
             } else {
                 node.selected = false;
+            }
+
+            if (this.checkboxes) {
+                let parent = node.parent;
+                while (parent) {
+                    const allChildren: UiAssetTreeNode[] = [];
+                    OrAssetTree._forEachNodeRecursive(parent.children, (child) => {
+                        allChildren.push(child);
+                    });
+                    parent.someChildrenSelected = false;
+                    parent.allChildrenSelected = false;
+
+                    if (allChildren.every(c => actuallySelectedIds.includes(c.asset!.id!))) {
+                        parent.allChildrenSelected = true;
+                    } else if (allChildren.some(c => actuallySelectedIds.includes(c.asset!.id!))) {
+                        parent.someChildrenSelected = true;
+                    }
+
+                    parent = parent.parent;
+                }
             }
         });
 
@@ -405,6 +440,21 @@ export class OrAssetTree extends subscribe(manager)(LitElement) {
         nodes.forEach((node) => this._updateSort(node.children, sortFunction));
     }
 
+    protected _toggleExpander(expander: HTMLElement, node: UiAssetTreeNode | null) {
+        if (node && node.expandable) {
+            node.expanded = !node.expanded;
+
+            if (node.expanded) {
+                this._expandedNodes.push(node);
+            } else {
+                this._expandedNodes = this._expandedNodes.filter(n => n !== node);
+            }
+
+            const elem = expander.parentElement!.parentElement!.parentElement!;
+            elem.toggleAttribute("data-expanded");
+        }
+    }
+
     protected _onNodeClicked(evt: MouseEvent | null, node: UiAssetTreeNode | null) {
         if (evt && evt.defaultPrevented) {
             return;
@@ -415,13 +465,10 @@ export class OrAssetTree extends subscribe(manager)(LitElement) {
         }
 
         const isExpander = evt && (evt.target as HTMLElement).className.indexOf("expander") >= 0;
+        const isParentCheckbox = evt && (evt.target as OrIcon)?.icon?.includes("checkbox-multiple");
 
         if (isExpander) {
-            if (node && node.expandable) {
-                node.expanded = !node.expanded;
-                const elem = (evt!.target as HTMLElement).parentElement!.parentElement!.parentElement!;
-                elem.toggleAttribute("data-expanded");
-            }
+            this._toggleExpander((evt.target as HTMLElement), node);
         } else {
             let canSelect = true;
 
@@ -441,14 +488,29 @@ export class OrAssetTree extends subscribe(manager)(LitElement) {
                 let deselectOthers = true;
                 const multiSelect = !this._isReadonly() && (!this.config || !this.config.select || !this.config.select.multiSelect);
 
-                if (multiSelect && evt && (evt.ctrlKey || evt.metaKey)) {
+                // determine if node was already selected
+                if (this.checkboxes || (multiSelect && evt && (evt.ctrlKey || evt.metaKey))) {
                     deselectOthers = false;
                     if (index >= 0 && this.selectedIds && this.selectedIds.length > 1) {
                         select = false;
                     }
                 }
 
-                if (deselectOthers) {
+                // handle selected state
+                if (isParentCheckbox) {
+                    selectedNodes = [...this.selectedNodes];
+
+                    const childNodes: UiAssetTreeNode[] = [];
+                    OrAssetTree._forEachNodeRecursive(node.children, (childNode) => {
+                        childNodes.push(childNode);
+                    });
+
+                    // based on multiple-box already selected, remove or add to array of selected nodes
+                    selectedNodes = (!node.allChildrenSelected)
+                        ? selectedNodes.concat(childNodes)
+                        : selectedNodes.filter(n => !childNodes.map(cn => cn.asset!.id).includes(n.asset!.id));
+
+                } else if (deselectOthers) {
                     selectedNodes = [node];
                 } else if (select) {
                     if (index < 0) {
@@ -523,13 +585,12 @@ export class OrAssetTree extends subscribe(manager)(LitElement) {
             addBtn.disabled = !ev.detail.descriptor || !nameValid;
         };
 
-        dialog = showDialog(
-            {
-                title: i18next.t("addAsset"),
-                content: html`
+        dialog = showDialog(new OrMwcDialog()
+            .setHeading(i18next.t("addAsset"))
+            .setContent(html`
                     <or-add-asset-dialog id="add-panel" .config="${this.config}" .agentTypes="${agentTypes}" .assetTypes="${assetTypes}" .parent="${parent}" @or-add-asset-changed="${onAddChanged}"></or-add-asset-dialog>
-                `,
-                actions: [
+                `)
+            .setActions([
                     {
                         actionName: "cancel",
                         content: i18next.t("cancel")
@@ -599,17 +660,16 @@ export class OrAssetTree extends subscribe(manager)(LitElement) {
                                 });
                         }
                     }
-                ],
-                styles: html`
+                ])
+            .setStyles(html`
                     <style>
                         .mdc-dialog__content {
                             padding: 0 !important;
                         }
                     </style>
-                `,
-                dismissAction: null
-            }
-        )
+                `)
+            .setDismissAction(null)
+        );
     }
 
     protected _onDeleteClicked() {
@@ -738,13 +798,19 @@ export class OrAssetTree extends subscribe(manager)(LitElement) {
                 return;
             }
 
+            if (this._loading) {
+                return;
+            }
+
+            this._loading = true;
+
             const query: AssetQuery = {
                 tenant: {
-                    realm: manager.isSuperUser() ? manager.displayRealm : manager.getRealm()
+                    realm: manager.displayRealm
                 },
                 select: { // Just need the basic asset info
                     excludeAttributes: true,
-                    excludePath: true,
+                    excludePath: !manager.isRestrictedUser(),
                     excludeParentInfo: true
                 }
             };
@@ -765,9 +831,12 @@ export class OrAssetTree extends subscribe(manager)(LitElement) {
                     assetQuery: query
                 }
             })
-                .then((ev) =>
-                    this._buildTreeNodes((ev as AssetsEvent).assets!, sortFunction));
+                .then((ev) => {
+                    this._loading = false;
+                    this._buildTreeNodes((ev as AssetsEvent).assets!, sortFunction)
+                });
         } else {
+            this._loading = false;
             this._buildTreeNodes(this.assets, sortFunction);
         }
     }
@@ -831,9 +900,27 @@ export class OrAssetTree extends subscribe(manager)(LitElement) {
     }
 
     protected _buildTreeNodes(assets: Asset[], sortFunction: (a: UiAssetTreeNode, b: UiAssetTreeNode) => number) {
+
         if (!assets || assets.length === 0) {
             this._nodes = [];
         } else {
+            if (manager.isRestrictedUser()) {
+                // Any assets whose parents aren't accessible need to be re-parented
+                assets.forEach(asset => {
+                    if (!!asset.parentId && !!asset.path && assets.find(a => a.id === asset.parentId) === undefined) {
+                        let reparentId = null;
+                        for (let i = 2; i < asset.path!.length; i++) {
+                            const ancestorId = asset.path![i];
+                            if (assets.find(a => a.id === ancestorId) !== undefined) {
+                                reparentId = ancestorId;
+                                break;
+                            }
+                        }
+                        (asset as AssetWithReparentId).reparentId = reparentId;
+                    }
+                });
+            }
+
             let rootAssetIds: string[] | undefined;
 
             if (this.rootAssetIds) {
@@ -845,13 +932,13 @@ export class OrAssetTree extends subscribe(manager)(LitElement) {
             let rootAssets: UiAssetTreeNode[];
 
             if (rootAssetIds) {
-                rootAssets = assets.filter((asset) => rootAssetIds!.indexOf(asset.id!) >= 0).map((asset) => {
+                rootAssets = assets.filter((asset: AssetWithReparentId) => rootAssetIds!.indexOf(asset.id!) >= 0 || asset.reparentId === null).map((asset) => {
                     return {
                         asset: asset
                     } as UiAssetTreeNode;
                 });
             } else {
-                rootAssets = assets.filter((asset) => !asset.parentId).map((asset) => {
+                rootAssets = assets.filter((asset: AssetWithReparentId) => !asset.parentId || asset.reparentId === null).map((asset) => {
                     return {
                         asset: asset
                     } as UiAssetTreeNode;
@@ -861,15 +948,33 @@ export class OrAssetTree extends subscribe(manager)(LitElement) {
             rootAssets.sort(sortFunction);
             rootAssets.forEach((rootAsset) => this._buildChildTreeNodes(rootAsset, assets, sortFunction));
             this._nodes = rootAssets;
+            const newExpanded: UiAssetTreeNode[] = [];
+            this._expandedNodes.forEach(expandedNode => {
+                OrAssetTree._forEachNodeRecursive(this._nodes!, n => {
+                    if (n.asset && expandedNode.asset && n.asset.id === expandedNode.asset.id) {
+                        n.expanded = true;
+                        newExpanded.push(n);
+                    }
+                });
+            });
+            this._expandedNodes = newExpanded;
         }
 
         if (this.selectedIds && this.selectedIds.length > 0) {
             this._updateSelectedNodes();
         }
+
+        if (this.expandNodes) {
+            OrAssetTree._forEachNodeRecursive(this._nodes, (node) => {
+                if (node.children && node.children.length > 0) {
+                    node.expanded = true;
+                }
+            });
+        }
     }
 
-    protected _buildChildTreeNodes(treeNode: UiAssetTreeNode, assets: Asset[], sortFunction: (a: UiAssetTreeNode, b: UiAssetTreeNode) => number) {
-        treeNode.children = assets.filter((asset) => asset.parentId === treeNode.asset!.id).map((asset) => {
+    protected _buildChildTreeNodes(treeNode: UiAssetTreeNode, assets: AssetWithReparentId[], sortFunction: (a: UiAssetTreeNode, b: UiAssetTreeNode) => number) {
+        treeNode.children = assets.filter((asset) => asset.parentId === treeNode.asset!.id || asset.reparentId === treeNode.asset!.id).map((asset) => {
             return {
                 asset: asset
             } as UiAssetTreeNode;
@@ -889,6 +994,15 @@ export class OrAssetTree extends subscribe(manager)(LitElement) {
 
         const descriptor = AssetModelUtil.getAssetDescriptor(treeNode.asset!.type!);
 
+        let parentCheckboxIcon;
+        if (treeNode.allChildrenSelected) {
+            parentCheckboxIcon = 'checkbox-multiple-marked';
+        } else if (treeNode.someChildrenSelected) {
+            parentCheckboxIcon = 'checkbox-multiple-marked-outline';
+        }else {
+            parentCheckboxIcon = 'checkbox-multiple-blank-outline';
+        }
+
         return html`
             <li ?data-selected="${treeNode.selected}" ?data-expanded="${treeNode.expanded}" @click="${(evt: MouseEvent) => this._onNodeClicked(evt, treeNode)}">
                 <div class="node-container" style="padding-left: ${level * 22}px">
@@ -896,6 +1010,18 @@ export class OrAssetTree extends subscribe(manager)(LitElement) {
                         <div class="expander" ?data-expandable="${treeNode.expandable}"></div>
                         ${getAssetDescriptorIconTemplate(descriptor)}
                         <span>${treeNode.asset!.name}</span>
+                        ${this.checkboxes ? html`
+                            <span class="mdc-list-item__graphic">
+                                ${treeNode.expandable 
+                                    ? html`<div class="mdc-checkbox">
+                                            <or-icon class="mdc-checkbox--parent" icon="${parentCheckboxIcon}"></or-icon>
+                                        </div>`
+                                    : ``}
+                                <div class="mdc-checkbox">
+                                    ${treeNode.selected ? html`<or-icon icon="checkbox-marked"></or-icon>`: html`<or-icon icon="checkbox-blank-outline"></or-icon>`}
+                                </div>
+                            </span>` 
+                        : ``}
                     </div>
                 </div>
                 <ol>

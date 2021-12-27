@@ -1,0 +1,30 @@
+{
+  "name": "@openremote/or-attribute-picker",
+  "version": "1.0.4",
+  "description": "OpenRemote attribute picker dialog",
+  "main": "dist/umd/index.bundle.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "test": "echo \"No tests\" && exit 0",
+    "prepublishOnly": "npx tsc -b && npx webpack"
+  },
+  "author": "OpenRemote",
+  "license": "AGPL-3.0-or-later",
+  "dependencies": {
+    "@openremote/core": "^1.0.3",
+    "@openremote/or-asset-tree": "^1.0.3",
+    "@openremote/or-mwc-components": "^1.0.3",
+    "@openremote/or-translate": "^1.0.3",
+    "lit": "^2.0.2"
+  },
+  "devDependencies": {
+    "tslint": ">=5.11.0",
+    "typescript": ">=4.5.2",
+    "webpack": "^5.64.3",
+    "webpack-cli": "^4.9.1"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

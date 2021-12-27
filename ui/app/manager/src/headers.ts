@@ -24,7 +24,8 @@ export function headerItemRules<S extends AppStateKeyed, A extends AnyAction>(or
         icon: "state-machine",
         href: "rules",
         text: "rule_plural",
-        hideMobile: true
+        hideMobile: true,
+        roles: () => !manager.hasRealmRole("restricted_user")
     };
 }
 
@@ -122,5 +123,15 @@ export function headerItemExport<S extends AppStateKeyed, A extends AnyAction>(o
         value: "export",
         href: "data-export",
         text: "dataExport"
+    };
+}
+
+export function headerItemProvisioning<S extends AppStateKeyed, A extends AnyAction>(orApp: OrApp<S>): HeaderItem {
+    return {
+        icon: "cellphone-cog",
+        value: "provisioning",
+        href: "provisioning",
+        text: "autoProvisioning",
+        roles: () => manager.isSuperUser()
     };
 }

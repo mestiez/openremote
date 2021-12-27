@@ -29,7 +29,7 @@ import {OrRulesJsonRuleChangedEvent} from "./or-rule-json-viewer";
 import {translate} from "@openremote/or-translate";
 import {OrAttributeInputChangedEvent} from "@openremote/or-attribute-input";
 import "./modals/or-rule-radial-modal";
-import { ifDefined } from "lit/directives/if-defined";
+import { ifDefined } from "lit/directives/if-defined.js";
 
 // language=CSS
 const style = css`
@@ -223,8 +223,6 @@ export class OrRuleAssetQuery extends translate(i18next)(LitElement) {
             case "rect":
                 return html `<span>NOT IMPLEMENTED</span>`;
             case "value-empty":
-                return ``;
-            case "value-not-empty":
                 return ``;
             case "array":
                 // TODO: Update once we can determine inner type of array
@@ -430,9 +428,7 @@ export class OrRuleAssetQuery extends translate(i18next)(LitElement) {
                 }
                 return valuePredicate.negated ? AssetQueryOperator.NOT_CONTAINS : AssetQueryOperator.CONTAINS;
             case "value-empty":
-                return AssetQueryOperator.VALUE_EMPTY;
-            case "value-not-empty":
-                return AssetQueryOperator.VALUE_NOT_EMPTY;
+                return valuePredicate.negate ? AssetQueryOperator.VALUE_NOT_EMPTY : AssetQueryOperator.VALUE_EMPTY;
         }
     }
 
@@ -621,7 +617,8 @@ export class OrRuleAssetQuery extends translate(i18next)(LitElement) {
                 break;
             case AssetQueryOperator.VALUE_NOT_EMPTY:
                 predicate = {
-                    predicateType: "value-not-empty"
+                    predicateType: "value-empty",
+                    negate: true
                 };
                 break;
             case AssetQueryOperator.CONTAINS:

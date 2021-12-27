@@ -52,7 +52,7 @@ jobs:
         run: sleep 600
       - name: login staging.demo.openremote.io and wait for map
         run: openremote-cli manager --open -t --quit --quiet -v --dnsname staging.demo.openremote.io --password "${{ secrets.STAGING_DEMO_PASSWORD }}"
-
+        continue-on-error: false
 
   image_manager:
     runs-on: ubuntu-latest
@@ -83,7 +83,7 @@ jobs:
           name: dist-build
       - name: build and push images
         run: |
-          #docker build --push --platform $PLATFORM -t openremote/manager:latest manager/build/install/manager
+          docker build --push --platform $PLATFORM -t openremote/manager:latest manager/build/install/manager
 
   build:
     runs-on: ubuntu-latest

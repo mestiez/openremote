@@ -11,6 +11,7 @@
   "references": [
     { "path": "../core" },
     { "path": "../or-chart" },
-    { "path": "../or-mwc-components" }
+    { "path": "../or-mwc-components" },
+    { "path": "../or-attribute-picker" }
   ]
 }

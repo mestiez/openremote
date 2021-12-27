@@ -15,18 +15,18 @@ function getAppConfig(mode, isDevServer, dirname, managerUrl, keycloakUrl) {
         },
         output: {
             path: dirname + "/dist",
-            publicPath: "",
+            publicPath: "/" + dirname.split(path.sep).slice(-1)[0] + "/",
             filename: "[name].[contenthash].js"
         },
         module: {
             rules: [
                 {
-                    test: /(mapbox|@material).*\.css$/, //output mapbox and material css as strings
+                    test: /(maplibre|mapbox|@material).*\.css$/, //output mapbox and material css as strings
                     type: "asset/source"
                 },
                 {
                     test: /\.css$/, //
-                    exclude: /(mapbox|@material).*\.css$/,
+                    exclude: /(maplibre|mapbox|@material).*\.css$/,
                     use: [
                         { loader: "css-loader" }
                     ]
@@ -157,9 +157,8 @@ function getAppConfig(mode, isDevServer, dirname, managerUrl, keycloakUrl) {
             index: "/" + dirname.split(path.sep).slice(-1)[0] + "/",
         },
         port: 9000,
-        publicPath: "/" + dirname.split(path.sep).slice(-1)[0] + "/",
-        contentBase: OUTPUT_PATH,
-        disableHostCheck: true
+        open: false,
+        static: OUTPUT_PATH
     };
     config.watchOptions = {
         ignored: ['**/*.ts', 'node_modules']

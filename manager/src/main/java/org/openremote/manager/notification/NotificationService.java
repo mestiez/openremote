@@ -38,6 +38,7 @@ import org.openremote.model.notification.Notification;
 import org.openremote.model.notification.NotificationSendResult;
 import org.openremote.model.notification.RepeatFrequency;
 import org.openremote.model.notification.SentNotification;
+import org.openremote.model.query.UserQuery;
 import org.openremote.model.util.TextUtil;
 import org.openremote.model.util.TimeUtil;
 
@@ -332,8 +333,8 @@ public class NotificationService extends RouteBuilder implements ContainerServic
         StringBuilder builder = new StringBuilder();
         builder.append("select n from SentNotification n where 1=1");
         List<Object> parameters = new ArrayList<>();
-        processCriteria(builder, parameters, ids, types, fromTimestamp, toTimestamp, tenantIds, userIds, assetIds);
-
+        processCriteria(builder, parameters, ids, types, fromTimestamp, toTimestamp, tenantIds, userIds, assetIds, false);
+        builder.append(" order by n.sentOn asc");
         return persistenceService.doReturningTransaction(entityManager -> {
             TypedQuery<SentNotification> query = entityManager.createQuery(builder.toString(), SentNotification.class);
             IntStream.range(0, parameters.size())
@@ -355,7 +356,7 @@ public class NotificationService extends RouteBuilder implements ContainerServic
         StringBuilder builder = new StringBuilder();
         builder.append("delete from SentNotification n where 1=1");
         List<Object> parameters = new ArrayList<>();
-        processCriteria(builder, parameters, ids, types, fromTimestamp, toTimestamp, tenantIds, userIds, assetIds);
+        processCriteria(builder, parameters, ids, types, fromTimestamp, toTimestamp, tenantIds, userIds, assetIds, true);
 
         persistenceService.doTransaction(entityManager -> {
             Query query = entityManager.createQuery(builder.toString());
@@ -365,7 +366,7 @@ public class NotificationService extends RouteBuilder implements ContainerServic
         });
     }
 
-    protected void processCriteria(StringBuilder builder, List<Object> parameters, List<Long> ids, List<String> types, Long fromTimestamp, Long toTimestamp, List<String> tenantIds, List<String> userIds, List<String> assetIds) {
+    protected void processCriteria(StringBuilder builder, List<Object> parameters, List<Long> ids, List<String> types, Long fromTimestamp, Long toTimestamp, List<String> tenantIds, List<String> userIds, List<String> assetIds, boolean isRemove) {
         boolean hasIds = ids != null && !ids.isEmpty();
         boolean hasTypes = types != null && !types.isEmpty();
         boolean hasTenants = tenantIds != null && !tenantIds.isEmpty();
@@ -389,7 +390,7 @@ public class NotificationService extends RouteBuilder implements ContainerServic
             counter++;
         }
 
-        if (fromTimestamp == null && toTimestamp == null && counter == 0) {
+        if (isRemove && fromTimestamp == null && toTimestamp == null && counter == 0) {
             LOG.info("No filters set for remove notifications request so not allowed");
             throw new IllegalArgumentException("No criteria specified");
         }
@@ -512,7 +513,7 @@ public class NotificationService extends RouteBuilder implements ContainerServic
                     boolean realmMatch = false;
 
                     if (target.getType() == Notification.TargetType.USER) {
-                        realmMatch = Arrays.stream(identityService.getIdentityProvider().getUsers(Collections.singletonList(target.getId())))
+                        realmMatch = Arrays.stream(identityService.getIdentityProvider().queryUsers(new UserQuery().ids(target.getId())))
                                 .allMatch(user -> realm.equals(user.getRealm()));
                     } else {
                         // Can only send to the same realm as the requestor realm

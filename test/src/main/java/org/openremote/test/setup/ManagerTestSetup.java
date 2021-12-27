@@ -23,20 +23,23 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.openremote.agent.protocol.simulator.SimulatorAgent;
 import org.openremote.agent.protocol.simulator.SimulatorAgentLink;
 import org.openremote.container.util.UniqueIdentifierGenerator;
+import org.openremote.manager.security.ManagerIdentityProvider;
 import org.openremote.manager.setup.ManagerSetup;
 import org.openremote.model.Constants;
 import org.openremote.model.Container;
 import org.openremote.model.asset.Asset;
-import org.openremote.model.asset.UserAsset;
+import org.openremote.model.asset.UserAssetLink;
 import org.openremote.model.asset.impl.*;
 import org.openremote.model.attribute.Attribute;
 import org.openremote.model.attribute.MetaItem;
 import org.openremote.model.geo.GeoJSONPoint;
 import org.openremote.model.security.Tenant;
+import org.openremote.model.util.ValueUtil;
 import org.openremote.model.value.ValueConstraint;
 import org.openremote.model.value.ValueType;
-import org.openremote.model.util.ValueUtil;
 import org.openremote.model.value.impl.ColourRGB;
+
+import java.util.Arrays;
 
 import static org.openremote.manager.datapoint.AssetDatapointService.DATA_POINTS_MAX_AGE_DAYS_DEFAULT;
 import static org.openremote.model.Constants.*;
@@ -83,6 +86,7 @@ public class ManagerTestSetup extends ManagerSetup {
     public String masterRealm;
     public String realmBuildingTenant;
     public String realmCityTenant;
+    public String realmEnergyTenant;
     public String smartCityServiceAgentId;
     public String area1Id;
     public String microphone1Id;
@@ -90,6 +94,7 @@ public class ManagerTestSetup extends ManagerSetup {
     public String electricityOptimisationAssetId;
     public String electricityConsumerAssetId;
     public String electricitySolarAssetId;
+    public String electricityWindAssetId;
     public String electricitySupplierAssetId;
     public String electricityBatteryAssetId;
 
@@ -108,6 +113,7 @@ public class ManagerTestSetup extends ManagerSetup {
         masterRealm = masterTenant.getRealm();
         this.realmBuildingTenant = tenantBuilding.getRealm();
         this.realmCityTenant = tenantCity.getRealm();
+        this.realmEnergyTenant = keycloakTestSetup.energyTenant.getRealm();
 
         // ################################ Assets for 'master' realm ###################################
 
@@ -217,8 +223,33 @@ public class ManagerTestSetup extends ManagerSetup {
         electricitySolarAsset.getAttribute(ElectricityAsset.POWER).ifPresent(attr ->
             attr.addMeta(new MetaItem<>(HAS_PREDICTED_DATA_POINTS))
         );
+        electricitySolarAsset.setPanelOrientation(ElectricityProducerSolarAsset.PanelOrientation.SOUTH);
+        electricitySolarAsset.setPanelAzimuth(0);
+        electricitySolarAsset.setPanelPitch(30);
+        electricitySolarAsset.setEfficiencyExport(100);
+        electricitySolarAsset.setPowerExportMax(2.5);
+        electricitySolarAsset.setLocation(new GeoJSONPoint(9.195285, 48.787418));
+        electricitySolarAsset.setSetActualValueWithForecast(true);
+        electricitySolarAsset.setIncludeForecastSolarService(true);
         electricitySolarAsset = assetStorageService.merge(electricitySolarAsset);
         electricitySolarAssetId = electricitySolarAsset.getId();
+
+        ElectricityProducerWindAsset electricityWindAsset = new ElectricityProducerWindAsset("Wind Turbine");
+        electricityWindAsset.setParent(electricityOptimisationAsset);
+        electricityWindAsset.getAttribute(ElectricityAsset.POWER).ifPresent(attr ->
+                attr.addMeta(new MetaItem<>(HAS_PREDICTED_DATA_POINTS))
+        );
+        electricityWindAsset.setWindSpeedMax(18d);
+        electricityWindAsset.setWindSpeedMin(2d);
+        electricityWindAsset.setWindSpeedReference(12d);
+        electricityWindAsset.setPowerExportMax(9000d);
+        electricityWindAsset.setEfficiencyExport(100);
+        electricityWindAsset.setPowerExportMax(2.5);
+        electricityWindAsset.setLocation(new GeoJSONPoint(9.195285, 48.787418));
+        electricityWindAsset.setSetActualValueWithForecast(true);
+        electricityWindAsset.setIncludeForecastWindService(true);
+        electricityWindAsset = assetStorageService.merge(electricityWindAsset);
+        electricityWindAssetId = electricityWindAsset.getId();
 
         ElectricityBatteryAsset electricityBatteryAsset = new ElectricityBatteryAsset("Battery");
         electricityBatteryAsset.setParent(electricityOptimisationAsset);
@@ -251,6 +282,8 @@ public class ManagerTestSetup extends ManagerSetup {
         );
         electricitySupplierAsset = assetStorageService.merge(electricitySupplierAsset);
         electricitySupplierAssetId = electricitySupplierAsset.getId();
+
+
 
         // ################################ Assets for 'building' realm ###################################
 
@@ -532,48 +565,41 @@ public class ManagerTestSetup extends ManagerSetup {
 
         // ################################ Link users and assets ###################################
 
-        assetStorageService.storeUserAsset(new UserAsset(keycloakTestSetup.tenantBuilding.getRealm(),
+        assetStorageService.storeUserAssetLinks(Arrays.asList(
+            new UserAssetLink(keycloakTestSetup.tenantBuilding.getRealm(),
                 keycloakTestSetup.testuser3Id,
-                apartment1Id));
-        assetStorageService.storeUserAsset(new UserAsset(keycloakTestSetup.tenantBuilding.getRealm(),
+                apartment1Id),
+            new UserAssetLink(keycloakTestSetup.tenantBuilding.getRealm(),
                 keycloakTestSetup.testuser3Id,
-                apartment1LivingroomId));
-        assetStorageService.storeUserAsset(new UserAsset(keycloakTestSetup.tenantBuilding.getRealm(),
+                apartment1LivingroomId),
+            new UserAssetLink(keycloakTestSetup.tenantBuilding.getRealm(),
                 keycloakTestSetup.testuser3Id,
-                apartment1KitchenId));
-        assetStorageService.storeUserAsset(new UserAsset(keycloakTestSetup.tenantBuilding.getRealm(),
+                apartment1KitchenId),
+            new UserAssetLink(keycloakTestSetup.tenantBuilding.getRealm(),
                 keycloakTestSetup.testuser3Id,
-                apartment1Bedroom1Id));
-        assetStorageService.storeUserAsset(new UserAsset(keycloakTestSetup.tenantBuilding.getRealm(),
+                apartment1Bedroom1Id),
+            new UserAssetLink(keycloakTestSetup.tenantBuilding.getRealm(),
                 keycloakTestSetup.testuser3Id,
-                apartment1BathroomId));
-        assetStorageService.storeUserAsset(new UserAsset(keycloakTestSetup.tenantBuilding.getRealm(),
+                apartment1BathroomId),
+            new UserAssetLink(keycloakTestSetup.tenantBuilding.getRealm(),
                 keycloakTestSetup.testuser3Id,
-                apartment1HallwayId));
+                apartment1HallwayId)));
 
-        assetStorageService.storeUserAsset(new UserAsset(keycloakTestSetup.tenantBuilding.getRealm(),
+        assetStorageService.storeUserAssetLinks(Arrays.asList(
+            new UserAssetLink(keycloakTestSetup.tenantBuilding.getRealm(),
                 keycloakTestSetup.buildingUserId,
-                apartment1Id));
-        assetStorageService.storeUserAsset(new UserAsset(keycloakTestSetup.tenantBuilding.getRealm(),
+                apartment2Id),
+            new UserAssetLink(keycloakTestSetup.tenantBuilding.getRealm(),
                 keycloakTestSetup.buildingUserId,
-                apartment1LivingroomId));
-        assetStorageService.storeUserAsset(new UserAsset(keycloakTestSetup.tenantBuilding.getRealm(),
+                apartment2LivingroomId),
+            new UserAssetLink(keycloakTestSetup.tenantBuilding.getRealm(),
                 keycloakTestSetup.buildingUserId,
-                apartment1KitchenId));
-        assetStorageService.storeUserAsset(new UserAsset(keycloakTestSetup.tenantBuilding.getRealm(),
-                keycloakTestSetup.buildingUserId,
-                apartment1Bedroom1Id));
-        assetStorageService.storeUserAsset(new UserAsset(keycloakTestSetup.tenantBuilding.getRealm(),
-                keycloakTestSetup.buildingUserId,
-                apartment1BathroomId));
-        assetStorageService.storeUserAsset(new UserAsset(keycloakTestSetup.tenantBuilding.getRealm(),
-                keycloakTestSetup.buildingUserId,
-                apartment1HallwayId));
+                apartment2BathroomId)));
 
         // ################################ Make users restricted ###################################
-
-        identityService.getIdentityProvider().updateUserRoles(tenantBuilding.getRealm(), keycloakTestSetup.testuser3Id, null, RESTRICTED_USER_REALM_ROLE);
-        identityService.getIdentityProvider().updateUserRoles(tenantBuilding.getRealm(), keycloakTestSetup.buildingUserId, null, RESTRICTED_USER_REALM_ROLE);
+        ManagerIdentityProvider identityProvider = identityService.getIdentityProvider();
+        identityProvider.updateUserRealmRoles(tenantBuilding.getRealm(), keycloakTestSetup.testuser3Id, identityProvider.addRealmRoles(tenantBuilding.getRealm(), keycloakTestSetup.testuser3Id, RESTRICTED_USER_REALM_ROLE));
+        identityProvider.updateUserRealmRoles(tenantBuilding.getRealm(), keycloakTestSetup.buildingUserId, identityProvider.addRealmRoles(tenantBuilding.getRealm(), keycloakTestSetup.buildingUserId, RESTRICTED_USER_REALM_ROLE));
 
         // ################################ Realm smartcity ###################################
 

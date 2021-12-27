@@ -19,7 +19,6 @@
  */
 package org.openremote.manager.rules;
 
-import org.apache.camel.Predicate;
 import org.apache.camel.builder.RouteBuilder;
 import org.openremote.container.message.MessageBrokerService;
 import org.openremote.container.persistence.PersistenceEvent;
@@ -30,10 +29,10 @@ import org.openremote.manager.asset.AssetProcessingService;
 import org.openremote.manager.asset.AssetStorageService;
 import org.openremote.manager.asset.AssetUpdateProcessor;
 import org.openremote.manager.datapoint.AssetDatapointService;
+import org.openremote.manager.datapoint.AssetPredictedDatapointService;
 import org.openremote.manager.event.ClientEventService;
 import org.openremote.manager.gateway.GatewayService;
 import org.openremote.manager.notification.NotificationService;
-import org.openremote.manager.datapoint.AssetPredictedDatapointService;
 import org.openremote.manager.rules.flow.FlowResourceImpl;
 import org.openremote.manager.rules.geofence.GeofenceAssetAdapter;
 import org.openremote.manager.security.ManagerIdentityService;
@@ -196,10 +195,6 @@ public class RulesService extends RouteBuilder implements ContainerService, Asse
         initDone = true;
     }
 
-    protected Predicate isNotForGW() {
-        return exchange -> isNotForGateway(gatewayService).matches(exchange);
-    }
-
     @SuppressWarnings("unchecked")
     @Override
     public void configure() throws Exception {
@@ -207,7 +202,7 @@ public class RulesService extends RouteBuilder implements ContainerService, Asse
         from(PERSISTENCE_TOPIC)
             .routeId("RulesetPersistenceChanges")
             .filter(isPersistenceEventForEntityType(Ruleset.class))
-            .filter(this.isNotForGW())
+            .filter(isNotForGateway(gatewayService))
             .process(exchange -> {
                 PersistenceEvent<?> persistenceEvent = exchange.getIn().getBody(PersistenceEvent.class);
                 processRulesetChange((Ruleset) persistenceEvent.getEntity(), persistenceEvent.getCause());
@@ -836,10 +831,11 @@ public class RulesService extends RouteBuilder implements ContainerService, Asse
     }
 
     protected List<AssetState<?>> getAssetStatesInScope(String assetId) {
-        return assetStates
-            .stream()
-            .filter(assetState -> Arrays.asList(assetState.getPath()).contains(assetId))
-            .collect(Collectors.toList());
+        return withLockReturning(getClass().getSimpleName() + "::getAssetStatesInScope", () ->
+                assetStates
+                .stream()
+                .filter(assetState -> Arrays.asList(assetState.getPath()).contains(assetId))
+                .collect(Collectors.toList()));
     }
 
     protected List<RulesEngine<?>> getEnginesInScope(String realm, String[] assetPath) {
@@ -1031,6 +1027,11 @@ public class RulesService extends RouteBuilder implements ContainerService, Asse
         return Optional.empty();
     }
 
+    /**
+     * Trigger rules engines which have the {@link org.openremote.model.value.MetaItemDescriptor} {@link org.openremote.model.rules.Ruleset#TRIGGER_ON_PREDICTED_DATA}
+     * and contain {@link AssetState} of the specified asset id. Use this when {@link PredictedDatapoints} has changed for this asset.
+     * @param assetId of the asset which has new predicated data points.
+     */
     public void fireDeploymentsWithPredictedDataForAsset(String assetId) {
         List<AssetState<?>> assetStates = getAssetStatesInScope(assetId);
         if (assetStates.size() > 0) {

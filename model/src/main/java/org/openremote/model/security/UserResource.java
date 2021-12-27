@@ -22,6 +22,8 @@ package org.openremote.model.security;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.openremote.model.Constants;
 import org.openremote.model.http.RequestParams;
+import org.openremote.model.query.UserQuery;
+
 import javax.annotation.security.RolesAllowed;
 import javax.validation.Valid;
 import javax.ws.rs.*;
@@ -52,12 +54,6 @@ public interface UserResource {
     @RolesAllowed(Constants.WRITE_ADMIN_ROLE)
     Role[] getClientRoles(@BeanParam RequestParams requestParams, @PathParam("realm") String realm, @PathParam("clientId") String clientId);
 
-    @GET
-    @Path("{realm}/realm-roles")
-    @RolesAllowed(Constants.WRITE_ADMIN_ROLE)
-    @Produces(APPLICATION_JSON)
-    Role[] getRealmRoles(@BeanParam RequestParams requestParams, @PathParam("realm") String realm);
-
     @PUT
     @Path("{realm}/roles")
     @Consumes(APPLICATION_JSON)
@@ -70,22 +66,11 @@ public interface UserResource {
     @RolesAllowed(Constants.WRITE_ADMIN_ROLE)
     void updateClientRoles(@BeanParam RequestParams requestParams, @PathParam("realm") String realm, Role[] roles, @PathParam("clientId") String clientId);
 
-    @PUT
-    @Path("{realm}/realm-roles")
+    @POST
     @Consumes(APPLICATION_JSON)
-    @RolesAllowed(Constants.WRITE_ADMIN_ROLE)
-    void updateRealmRoles(@BeanParam RequestParams requestParams, @PathParam("realm") String realm, Role[] roles);
-
-    @GET
     @Produces(APPLICATION_JSON)
-    @Path("{realm}/users")
-    User[] getAll(@BeanParam RequestParams requestParams, @PathParam("realm") String realm);
-
-    @GET
-    @Produces(APPLICATION_JSON)
-    @Path("{realm}/service-users")
-    @RolesAllowed({READ_USERS_ROLE, READ_ADMIN_ROLE})
-    User[] getAllService(@BeanParam RequestParams requestParams, @PathParam("realm") String realm);
+    @Path("query")
+    User[] query(@BeanParam RequestParams requestParams, UserQuery query);
 
     @GET
     @Path("{realm}/{userId}")

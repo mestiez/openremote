@@ -51,15 +51,15 @@ class MqttBrokerTest extends Specification implements ManagerContainerTrait {
         def clientEventService = container.getService(ClientEventService.class)
         def agentService = container.getService(AgentService.class)
         def mqttClientId = UniqueIdentifierGenerator.generateId()
-        def username = keycloakTestSetup.tenantBuilding.realm + ":" + KeycloakTestSetup.serviceUserId // realm and OAuth client id
-        def password = KeycloakTestSetup.serviceUserSecret
+        def username = keycloakTestSetup.tenantBuilding.realm + ":" + keycloakTestSetup.serviceUser.username // realm and OAuth client id
+        def password = keycloakTestSetup.serviceUser.secret
 
         def mqttHost = getString(container.getConfig(), MQTT_SERVER_LISTEN_HOST, BrokerConstants.HOST)
         def mqttPort = getInteger(container.getConfig(), MQTT_SERVER_LISTEN_PORT, BrokerConstants.PORT)
 
         when: "a mqtt client connects with invalid credentials"
-        def wrongUsername = "master:" + KeycloakTestSetup.serviceUserId
-        MQTT_IOClient client = new MQTT_IOClient(mqttClientId, mqttHost, mqttPort, false, new UsernamePassword(wrongUsername, password), null)
+        def wrongUsername = "master:" + keycloakTestSetup.serviceUser.username
+        MQTT_IOClient client = new MQTT_IOClient(mqttClientId, mqttHost, mqttPort, false, true, new UsernamePassword(wrongUsername, password), null)
         client.connect()
 
         then: "the client connection status should be in error"
@@ -70,7 +70,7 @@ class MqttBrokerTest extends Specification implements ManagerContainerTrait {
         when: "a mqtt client connects with valid credentials"
         client.disconnect()
         mqttClientId = UniqueIdentifierGenerator.generateId()
-        client = new MQTT_IOClient(mqttClientId, mqttHost, mqttPort, false, new UsernamePassword(username, password), null)
+        client = new MQTT_IOClient(mqttClientId, mqttHost, mqttPort, false, true, new UsernamePassword(username, password), null)
         client.connect()
 
         then: "mqtt connection should exist"
@@ -161,11 +161,17 @@ class MqttBrokerTest extends Specification implements ManagerContainerTrait {
         def payload = ValueUtil.asJSON(new AttributeEvent(managerTestSetup.apartment1HallwayId, "motionSensor", 70)).get()
         client.sendMessage(new MQTTMessage<String>(topic, payload))
 
-        then: "The value of the attribute shouldn't be updated"
+        then: "The value of the attribute should be updated and the client should have received the event"
         new PollingConditions(initialDelay: 1, timeout: 10, delay: 1).eventually {
             def asset = assetStorageService.find(managerTestSetup.apartment1HallwayId)
-            assert asset.getAttribute("motionSensor").get().value.orElse(0) == 50d
+            assert asset.getAttribute("motionSensor").get().value.orElse(0) == 70d
+            assert receivedEvents.size() == 1
+            assert receivedEvents.get(0) instanceof AttributeEvent
+            assert (receivedEvents.get(0) as AttributeEvent).assetId == managerTestSetup.apartment1HallwayId
+            assert (receivedEvents.get(0) as AttributeEvent).attributeName == "motionSensor"
+            assert (receivedEvents.get(0) as AttributeEvent).value.orElse(0) == 70d
         }
+        receivedEvents.clear()
 
         when: "a mqtt client publishes to an asset attribute which is not readonly"
         payload = ValueUtil.asJSON(new AttributeEvent(managerTestSetup.apartment1HallwayId, "lights", false)).get()

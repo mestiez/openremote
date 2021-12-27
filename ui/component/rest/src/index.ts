@@ -1,8 +1,10 @@
-import axios, {AxiosInstance, AxiosRequestConfig, GenericAxiosResponse} from "axios";
+import axios, {AxiosInstance, AxiosRequestConfig, GenericAxiosResponse, AxiosError} from "axios";
 import {ApiClient, RestResponse} from "./restclient";
 import Qs from "qs";
 
-export {RestResponse, GenericAxiosResponse};
+const isAxiosError = axios.isAxiosError;
+
+export {RestResponse, GenericAxiosResponse, AxiosError, isAxiosError};
 
 export class RestApi {
 
@@ -15,7 +17,7 @@ export class RestApi {
 
     constructor() {
         this._axiosInstance = axios.create();
-        this._axiosInstance.defaults.headers["Content-Type"] = "application/json";
+        this._axiosInstance.defaults.headers.common["Content-Type"] = "application/json";
         this._axiosInstance.interceptors.request.use((config) => {
             config.paramsSerializer = (params) => Qs.stringify(params, {arrayFormat: "repeat"});
             return config;

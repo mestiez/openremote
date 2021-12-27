@@ -5,13 +5,14 @@ import "@openremote/or-components/or-panel";
 import "@openremote/or-translate";
 import {EnhancedStore} from "@reduxjs/toolkit";
 import {AppStateKeyed, Page, PageProvider} from "@openremote/or-app";
-import {ClientRole, Role, User} from "@openremote/model";
+import {ClientRole, RealmRole, Role, User, UserAssetLink, UserQuery} from "@openremote/model";
 import {i18next} from "@openremote/or-translate";
 import {OrIcon} from "@openremote/or-icon";
 import {InputType, OrInputChangedEvent, OrMwcInput} from "@openremote/or-mwc-components/or-mwc-input";
-import {showOkCancelDialog} from "@openremote/or-mwc-components/or-mwc-dialog";
+import {OrMwcDialog, showDialog, showOkCancelDialog} from "@openremote/or-mwc-components/or-mwc-dialog";
 import {showSnackbar} from "@openremote/or-mwc-components/or-mwc-snackbar";
-import {GenericAxiosResponse, RestResponse} from "@openremote/rest";
+import {AxiosError, isAxiosError, GenericAxiosResponse} from "@openremote/rest";
+import {OrAssetTreeSelectionEvent} from "@openremote/or-asset-tree";
 
 const tableStyle = require("@material/data-table/dist/mdc.data-table.css");
 
@@ -27,8 +28,17 @@ export function pageUsersProvider<S extends AppStateKeyed>(store: EnhancedStore<
 
 interface UserModel extends User {
     password?: string;
+    loaded?: boolean;
+    loading?: boolean;
+    previousRoles?: Role[];
     roles?: Role[];
+    previousRealmRoles?: Role[];
+    realmRoles?: Role[];
+    previousAssetLinks?: UserAssetLink[];
+    userAssetLinks?: UserAssetLink[];
 }
+
+const RESTRICTED_USER_REALM_ROLE = "restricted_user";
 
 @customElement("page-users")
 class PageUsers<S extends AppStateKeyed> extends Page<S> {
@@ -94,6 +104,11 @@ class PageUsers<S extends AppStateKeyed> extends Page<S> {
                     border-top-color: #D3D3D3;
                 }
 
+                .mdc-data-table__row.disabled {
+                    cursor: progress;
+                    opacity: 0.4;
+                }
+
                 td, th {
                     width: 25%
                 }
@@ -135,18 +150,18 @@ class PageUsers<S extends AppStateKeyed> extends Page<S> {
                     padding-left: 36px;
                 }
 
-                .attribute-meta-row td {
+                .item-row td {
                     padding: 0;
                 }
 
-                .meta-item-container {
+                .item-row-content {
                     flex-direction: row;
                     overflow: hidden;
                     max-height: 0;
                     padding-left: 16px;
                 }
 
-                .attribute-meta-row.expanded .meta-item-container {
+                .item-row.expanded .item-row-content {
                     overflow: visible;
                     max-height: unset;
                 }
@@ -199,7 +214,6 @@ class PageUsers<S extends AppStateKeyed> extends Page<S> {
 
     @property()
     public realm?: string;
-
     @state()
     protected _users: UserModel[] = [];
     @state()
@@ -207,7 +221,10 @@ class PageUsers<S extends AppStateKeyed> extends Page<S> {
     @state()
     protected _roles: Role[] = [];
     @state()
+    protected _realmRoles: RealmRole[] = [];
+    @state()
     protected _compositeRoles: Role[] = [];
+    protected _loading: boolean = false;
 
     get name(): string {
         return "user_plural";
@@ -223,18 +240,40 @@ class PageUsers<S extends AppStateKeyed> extends Page<S> {
     }
 
     public connectedCallback() {
-        this.loadUsers();
         super.connectedCallback();
+        this.loadUsers();
     }
 
     public disconnectedCallback() {
         super.disconnectedCallback();
     }
 
+    protected responseAndStateOK(stateChecker: () => boolean, response: GenericAxiosResponse<any>, errorMsg: string): boolean {
+
+        if (!stateChecker()) {
+            return false;
+        }
+
+        if (!response.data) {
+            showSnackbar(undefined, errorMsg, i18next.t("dismiss"));
+            console.error(errorMsg + ": response = " + response.statusText);
+            return false;
+        }
+
+        return true;
+    }
+
     protected async loadUsers() {
+
+        if (!this.realm || this._loading || !this.isConnected) {
+            return;
+        }
+
+        this._loading = true;
 
         this._compositeRoles = [];
         this._roles = [];
+        this._realmRoles = [];
         this._users = [];
         this._serviceUsers = [];
 
@@ -243,80 +282,72 @@ class PageUsers<S extends AppStateKeyed> extends Page<S> {
             return;
         }
 
-        const loadedDeferred = new Util.Deferred<TemplateResult>();
-        const realm = this.getState().app.realm;
-        const responseAndStateOK: <T extends GenericAxiosResponse<any[]>>(response: T, errorMsg: string) => boolean = (response, errorMsg) => {
-
-            // After async op check that the response still matches current state and that the component is still loaded in the UI
-            if (this.getState().app.realm !== realm || !this.isConnected) {
-                // Realm change or component disconnected - don't continue
-                return false;
-            }
-
-            if (!response.data) {
-                showSnackbar(undefined, errorMsg, i18next.t("dismiss"));
-                console.error(errorMsg + ": response = " + response.statusText);
-                return false;
-            }
-
-            return true;
-        };
+        // After async op check that the response still matches current state and that the component is still loaded in the UI
+        const stateChecker = () => {
+            return this.getState().app.realm === this.realm && this.isConnected;
+        }
 
         const roleResponse = await manager.rest.api.UserResource.getRoles(manager.displayRealm);
 
-        if (!responseAndStateOK(roleResponse, i18next.t("loadFailedRoles"))) {
+        if (!this.responseAndStateOK(stateChecker, roleResponse, i18next.t("loadFailedRoles"))) {
             return;
         }
 
-        const compositeRoles = roleResponse.data.filter(role => role.composite);
-        const roles = roleResponse.data.filter(role => !role.composite);
-        const usersResponse = await manager.rest.api.UserResource.getAll(manager.displayRealm);
+        const tenantResponse = await manager.rest.api.TenantResource.get(manager.displayRealm);
 
-        if (!responseAndStateOK(usersResponse, i18next.t("loadFailedUsers"))) {
+        if (!this.responseAndStateOK(stateChecker, tenantResponse, i18next.t("loadFailedRoles"))) {
             return;
         }
 
-        const serviceUsersResponse = await manager.rest.api.UserResource.getAllService(manager.displayRealm);
+        const usersResponse = await manager.rest.api.UserResource.query({tenantPredicate: {realm: manager.displayRealm}} as UserQuery);
 
-        if (!responseAndStateOK(serviceUsersResponse, i18next.t("loadFailedServiceUsers"))) {
+        if (!this.responseAndStateOK(stateChecker, usersResponse, i18next.t("loadFailedUsers"))) {
             return;
         }
 
-        const users: UserModel[] = usersResponse.data;
-        const serviceUsers: UserModel[] = serviceUsersResponse.data;
-
-        // Load each users assigned roles
-        const roleLoaders = [...users, ...serviceUsers].map(async user => {
-            const userRolesResponse = await (user.serviceAccount ? manager.rest.api.UserResource.getUserClientRoles(manager.displayRealm, user.id, user.username) : manager.rest.api.UserResource.getUserRoles(manager.displayRealm, user.id));
-            user.roles = userRolesResponse.data.filter(r => r.assigned);
-        });
-
-        await Promise.all(roleLoaders);
-
-        // Only update state once all promises are fulfilled
-        this._compositeRoles = compositeRoles.sort(Util.sortByString(role => role.name));
-        this._roles = roles.sort(Util.sortByString(role => role.name));
-        this._users = users.sort(Util.sortByString(u => u.username));
-        this._serviceUsers = serviceUsers.sort(Util.sortByString(u => u.username));
+        this._compositeRoles = roleResponse.data.filter(role => role.composite).sort(Util.sortByString(role => role.name));
+        this._roles = roleResponse.data.filter(role => !role.composite).sort(Util.sortByString(role => role.name));
+        this._realmRoles = (tenantResponse.data.realmRoles || []).sort(Util.sortByString(role => role.name));
+        this._users = usersResponse.data.filter(user => !user.serviceAccount).sort(Util.sortByString(u => u.username));
+        this._serviceUsers = usersResponse.data.filter(user => user.serviceAccount).sort(Util.sortByString(u => u.username));
+        this._loading = false;
     }
 
     private async _createUpdateUser(user: UserModel) {
+
+        if (!user.username) {
+            return;
+        }
 
         if (user.password === "") {
             // Means a validation failure shouldn't get here
             return;
         }
 
+        const isUpdate = !!user.id;
+
         try {
             const response = await manager.rest.api.UserResource.createUpdate(manager.displayRealm, user);
 
+            // Ensure user ID is set
+            user.id = response.data.id;
+
             if (user.password) {
-                const id = response.data.id;
                 const credentials = {value: user.password}
-                manager.rest.api.UserResource.resetPassword(manager.displayRealm, id, credentials);
+                manager.rest.api.UserResource.resetPassword(manager.displayRealm, user.id, credentials);
             }
-            (response.data as UserModel).roles = user.roles;
-            await this._updateRoles(response.data);
+
+            await this._updateRoles(user, false);
+            await this._updateRoles(user, true);
+            await this._updateUserAssetLinks(user);
+        } catch (e) {
+            if (isAxiosError(e)) {
+                console.error((isUpdate ? "save user failed" : "create user failed") + ": response = " + e.response.statusText);
+
+                if (e.response.status === 400) {
+                    showSnackbar(undefined, i18next.t(isUpdate ? "saveUserFailed" : "createUserFailed"), i18next.t("dismiss"));
+                }
+            }
         } finally {
             this.loadUsers();
         }
@@ -326,20 +357,47 @@ class PageUsers<S extends AppStateKeyed> extends Page<S> {
      * Backend only uses name of role not the ID so although service client roles are not the same as composite roles
      * the names will match so that's ok
      */
-    private async _updateRoles(user: UserModel) {
-        if (this._compositeRoles.length === 0 || !user.roles) {
+    private async _updateRoles(user: UserModel, realmRoles: boolean) {
+        const roles = realmRoles ? user.realmRoles.filter(role => role.assigned) : user.roles.filter(role => role.assigned);
+        const previousRoles = realmRoles ? user.previousRealmRoles : user.previousRoles;
+        const removedRoles = previousRoles.filter(previousRole => !roles.some(role => role.name === previousRole.name));
+        const addedRoles = roles.filter(role => !previousRoles.some(previousRole => previousRole.name === role.name));
+
+        if (removedRoles.length === 0 && addedRoles.length === 0) {
             return;
         }
 
-        const roles = user.roles.filter(role => role.assigned);
-
-        if (!user.serviceAccount) {
-            await manager.rest.api.UserResource.updateUserRoles(manager.displayRealm, user.id, roles);
+        if (realmRoles) {
+            await manager.rest.api.UserResource.updateUserRealmRoles(manager.displayRealm, user.id, roles);
         } else {
-            await manager.rest.api.UserResource.updateUserClientRoles(manager.displayRealm, user.id, user.username, roles);
+            if (!user.serviceAccount) {
+                await manager.rest.api.UserResource.updateUserRoles(manager.displayRealm, user.id, roles);
+            } else {
+                await manager.rest.api.UserResource.updateUserClientRoles(manager.displayRealm, user.id, user.username, roles);
+            }
         }
     }
 
+    private async _updateUserAssetLinks(user: UserModel) {
+        if (!user.previousAssetLinks) {
+            return;
+        }
+
+        const removedLinks = user.previousAssetLinks.filter(assetLink => !user.userAssetLinks.some(newLink => assetLink.id.assetId === newLink.id.assetId));
+        const addedLinks = user.userAssetLinks.filter(assetLink => !user.previousAssetLinks.some(oldLink => assetLink.id.assetId === oldLink.id.assetId)).map(link => {
+            // Ensure user ID is added as new users wouldn't have had an ID at the time the links were created in the UI
+            link.id.userId = user.id;
+            return link;
+        });
+
+        if (removedLinks.length > 0) {
+            await manager.rest.api.AssetResource.deleteUserAssetLinks(removedLinks);
+        }
+        if (addedLinks.length > 0) {
+            await manager.rest.api.AssetResource.createUserAssetLinks(addedLinks);
+        }
+    }
+    
     private _deleteUser(user) {
         showOkCancelDialog(i18next.t("delete"), i18next.t("deleteUserConfirm"), i18next.t("delete"))
             .then((ok) => {
@@ -383,7 +441,7 @@ class PageUsers<S extends AppStateKeyed> extends Page<S> {
                 <div class="panel">
                     <p class="panel-title">${i18next.t("regularUser_plural")}</p>
                     <div id="table-users" class="mdc-data-table">
-                        <table class="mdc-data-table__table" aria-label="attribute list">
+                        <table class="mdc-data-table__table" aria-label="user list">
                             <thead>
                             <tr class="mdc-data-table__header-row">
                                 <th class="mdc-data-table__header-cell" role="columnheader" scope="col">
@@ -406,7 +464,7 @@ class PageUsers<S extends AppStateKeyed> extends Page<S> {
                             }, user, readonly, compositeRoleOptions, "user"+index))}
                             ${(this._users.length === 0 || (this._users.length > 0 && !!this._users[this._users.length - 1].id)) && !readonly ? html`
                                 <tr class="mdc-data-table__row" @click="${() => {
-                                    this._users = [...this._users, {enabled: true}];
+                                    this._users = [...this._users, {realm: manager.displayRealm, userAssetLinks: [], roles:[], previousRoles: [], realmRoles: [], previousRealmRoles: [], enabled: true, loaded: true}];
                                 }}">
                                     <td colspan="100%">
                                         <a class="button"><or-icon icon="plus"></or-icon>${i18next.t("add")} ${i18next.t("user")}</a>
@@ -421,7 +479,7 @@ class PageUsers<S extends AppStateKeyed> extends Page<S> {
                 <div class="panel">
                     <p class="panel-title">${i18next.t("serviceUser_plural")}</p>
                     <div id="table-users" class="mdc-data-table">
-                        <table class="mdc-data-table__table" aria-label="attribute list">
+                        <table class="mdc-data-table__table" aria-label="user list">
                             <thead>
                             <tr class="mdc-data-table__header-row">
                                 <th class="mdc-data-table__header-cell" role="columnheader" scope="col">
@@ -445,6 +503,12 @@ class PageUsers<S extends AppStateKeyed> extends Page<S> {
                             ${(this._serviceUsers.length === 0 || (this._serviceUsers.length > 0 && !!this._serviceUsers[this._serviceUsers.length - 1].id)) && !readonly ? html`
                                 <tr class="mdc-data-table__row" @click="${() => {
                                     this._serviceUsers = [...this._serviceUsers, {
+                                        userAssetLinks: [],
+                                        roles: [],
+                                        previousRoles: [],
+                                        realmRoles: [],
+                                        previousRealmRoles: [],
+                                        loaded: true,
                                         enabled: true,
                                         serviceAccount: true}]
                                 }}">
@@ -465,10 +529,56 @@ class PageUsers<S extends AppStateKeyed> extends Page<S> {
         this.realm = state.app.realm;
     }
 
-    protected _toggleUserExpand(ev: MouseEvent) {
+    protected async _toggleUserExpand(ev: MouseEvent, user: UserModel) {
         const trElem = ev.currentTarget as HTMLTableRowElement;
         const expanderIcon = trElem.getElementsByTagName("or-icon")[0] as OrIcon;
         const userRow = (trElem.parentElement! as HTMLTableElement).rows[trElem.rowIndex];
+
+        if (user.loading) {
+            return;
+        }
+
+        if (!user.loaded) {
+            trElem.classList.add("disabled");
+            user.loading = true;
+
+            // Load users assigned roles
+            const userRolesResponse = await (user.serviceAccount ? manager.rest.api.UserResource.getUserClientRoles(manager.displayRealm, user.id, user.username) : manager.rest.api.UserResource.getUserRoles(manager.displayRealm, user.id));
+
+            if (!this.responseAndStateOK(() => true, userRolesResponse, i18next.t("loadFailedUserInfo"))) {
+                user.loading = false;
+                trElem.classList.remove("disabled");
+                return;
+            }
+
+            const userRealmRolesResponse = await manager.rest.api.UserResource.getUserRealmRoles(manager.displayRealm, user.id);
+
+            if (!this.responseAndStateOK(() => true, userRolesResponse, i18next.t("loadFailedUserInfo"))) {
+                user.loading = false;
+                trElem.classList.remove("disabled");
+                return;
+            }
+
+
+            const userAssetLinksResponse = await manager.rest.api.AssetResource.getUserAssetLinks({realm: manager.displayRealm, userId: user.id});
+
+            if (!this.responseAndStateOK(() => true, userAssetLinksResponse, i18next.t("loadFailedUserInfo"))) {
+                user.loading = false;
+                trElem.classList.remove("disabled");
+                return;
+            }
+
+            user.roles = userRolesResponse.data.filter(r => r.assigned);
+            user.realmRoles = userRealmRolesResponse.data.filter(r => r.assigned);
+            user.previousRealmRoles = [...user.realmRoles];
+            user.previousRoles = [...user.roles];
+            user.userAssetLinks = userAssetLinksResponse.data;
+            user.loaded = true;
+            user.loading = false;
+            trElem.classList.remove("disabled");
+            // Update the dom
+            this.requestUpdate();
+        }
 
         if (expanderIcon.icon === "chevron-right") {
             expanderIcon.icon = "chevron-down";
@@ -479,21 +589,84 @@ class PageUsers<S extends AppStateKeyed> extends Page<S> {
         }
     }
 
-    protected _onPasswordChanged(user: UserModel, suffix: string) {
+    protected _openAssetSelector(ev: MouseEvent, user: UserModel) {
+        const openBtn = ev.target as OrMwcInput;
+        openBtn.disabled = true;
+        user.previousAssetLinks = [...user.userAssetLinks];
 
+        const onAssetSelectionChanged = (e: OrAssetTreeSelectionEvent) => {
+            user.userAssetLinks = e.detail.newNodes.map(node => {
+                const userAssetLink: UserAssetLink = {
+                    id: {
+                        userId: user.id,
+                        realm: user.realm,
+                        assetId: node.asset.id
+                    }
+                };
+                return userAssetLink;
+            })
+        };
+
+        const dialog = showDialog(new OrMwcDialog()
+            .setHeading(i18next.t("restrictAccess"))
+            .setContent(html`
+                <or-asset-tree 
+                    id="chart-asset-tree" readonly .selectedIds="${user.userAssetLinks.map(ual => ual.id.assetId)}"
+                    .showSortBtn="${false}" expandNodes checkboxes
+                    @or-asset-tree-selection="${(e: OrAssetTreeSelectionEvent) => onAssetSelectionChanged(e)}"></or-asset-tree>
+            `)
+            .setActions([
+                {
+                    default: true,
+                    actionName: "cancel",
+                    content: i18next.t("cancel"),
+                    action: () => {
+                        user.userAssetLinks = user.previousAssetLinks;
+                        user.previousAssetLinks = undefined;
+                        openBtn.disabled = false;
+                    }
+                },
+                {
+                    actionName: "ok",
+                    content: i18next.t("ok"),
+                    action: () => {
+                        openBtn.disabled = false;
+                        this.requestUpdate();
+                    }
+                }
+            ])
+            .setDismissAction({
+                actionName: "cancel",
+                action: () => {
+                    user.userAssetLinks = user.previousAssetLinks;
+                    user.previousAssetLinks = undefined;
+                    openBtn.disabled = false;
+                }
+            }));
+    }
+
+    protected onUserChanged(e: OrInputChangedEvent, suffix: string) {
+        // Don't have form-associated custom element support in lit at time of writing which would be the way to go here
+        const formElement = (e.target as HTMLElement).parentElement;
+        const saveBtn = this.shadowRoot.getElementById("savebtn-" + suffix) as OrMwcInput;
+
+        if (formElement) {
+            const saveDisabled = Array.from(formElement.children).filter(e => e instanceof OrMwcInput).some(input => !(input as OrMwcInput).valid);
+            saveBtn.disabled = saveDisabled;
+        }
+    }
+
+    protected _onPasswordChanged(user: UserModel, suffix: string) {
         const passwordComponent = this.shadowRoot.getElementById("password-" + suffix) as OrMwcInput;
         const repeatPasswordComponent = this.shadowRoot.getElementById("repeatPassword-" + suffix) as OrMwcInput;
-        const saveBtn = this.shadowRoot.getElementById("savebtn-" + suffix) as OrMwcInput;
 
         if (repeatPasswordComponent.value !== passwordComponent.value) {
             const error = i18next.t("passwordMismatch");
             repeatPasswordComponent.setCustomValidity(error);
-            saveBtn.disabled = true;
             user.password = "";
         } else {
             repeatPasswordComponent.setCustomValidity(undefined);
             user.password = passwordComponent.value;
-            saveBtn.disabled = false;
         }
     }
 
@@ -531,11 +704,10 @@ class PageUsers<S extends AppStateKeyed> extends Page<S> {
     protected _getUserTemplate(addCancel: () => void, user: UserModel, readonly: boolean, compositeRoleOptions: string[], suffix: string): TemplateResult {
         const isServiceUser = user.serviceAccount;
         const isSameUser = user.username === manager.username;
-        user.roles = user.roles || [];
-        const implicitRoleNames = this.getImplicitUserRoles(user);
+        const implicitRoleNames = user.loaded ? this.getImplicitUserRoles(user) : [];
 
         return html`
-            <tr class="mdc-data-table__row" @click="${(ev) => this._toggleUserExpand(ev)}">
+            <tr class="mdc-data-table__row" @click="${(ev) => this._toggleUserExpand(ev, user)}">
                 <td class="padded-cell mdc-data-table__cell">
                     <or-icon icon="chevron-right"></or-icon>
                     <span>${user.username}</span>
@@ -550,142 +722,172 @@ class PageUsers<S extends AppStateKeyed> extends Page<S> {
                     <or-translate .value="${user.enabled ? "enabled" : "disabled"}"></or-translate>
                 </td>
             </tr>
-            <tr class="attribute-meta-row${!user.id ? " expanded" : ""}">
+            <tr class="item-row${!user.id ? " expanded" : ""}">
                 <td colspan="4">
-                    <div class="meta-item-container">
-                        <div class="row">
-                            <div class="column">
-                                <h5>${i18next.t("details")}</h5>
-                                <!-- user details -->
-                                <or-mwc-input ?readonly="${!!user.id || readonly}"
-                                              .label="${i18next.t("username")}"
-                                              .type="${InputType.TEXT}" min="1" required
-                                              .value="${user.username}"
-                                              @or-mwc-input-changed="${(e: OrInputChangedEvent) => user.username = e.detail.value}"></or-mwc-input>
-                                <or-mwc-input ?readonly="${readonly}"
-                                              class="${isServiceUser ? "hidden" : ""}"
-                                              .label="${i18next.t("email")}"
-                                              .type="${InputType.EMAIL}" min="1"
-                                              .value="${user.email}"
-                                              @or-mwc-input-changed="${(e: OrInputChangedEvent) => user.email = e.detail.value}"></or-mwc-input>
-                                <or-mwc-input ?readonly="${readonly}"
-                                              class="${isServiceUser ? "hidden" : ""}"
-                                              .label="${i18next.t("firstName")}"
-                                              .type="${InputType.TEXT}" min="1"
-                                              .value="${user.firstName}"
-                                              @or-mwc-input-changed="${(e: OrInputChangedEvent) => user.firstName = e.detail.value}"></or-mwc-input>
-                                <or-mwc-input ?readonly="${readonly}"
-                                              class="${isServiceUser ? "hidden" : ""}"
-                                              .label="${i18next.t("surname")}"
-                                              .type="${InputType.TEXT}" min="1"
-                                              .value="${user.lastName}"
-                                              @or-mwc-input-changed="${(e: OrInputChangedEvent) => user.lastName = e.detail.value}"></or-mwc-input>
+                    ${!user.loaded ? `` : html`
+                        <div class="item-row-content">
+                            <div class="row">
+                                <div class="column">
+                                    <h5>${i18next.t("details")}</h5>
+                                    <!-- user details -->
+                                    <or-mwc-input ?readonly="${!!user.id || readonly}"
+                                                  .label="${i18next.t("username")}"
+                                                  .type="${InputType.TEXT}" minLength="3" maxLength="255" required
+                                                  pattern="[a-zA-Z0-9-_]+"
+                                                  .value="${user.username}" .validationMessage="${i18next.t("invalidUsername")}"
+                                                  @or-mwc-input-changed="${(e: OrInputChangedEvent) => {user.username = e.detail.value; this.onUserChanged(e, suffix)}}"></or-mwc-input>
+                                    <or-mwc-input ?readonly="${readonly}"
+                                                  class="${isServiceUser ? "hidden" : ""}"
+                                                  .label="${i18next.t("email")}"
+                                                  .type="${InputType.EMAIL}"
+                                                  .value="${user.email}" .validationMessage="${i18next.t("invalidEmail")}"
+                                                  @or-mwc-input-changed="${(e: OrInputChangedEvent) => {user.email = e.detail.value; this.onUserChanged(e, suffix)}}"></or-mwc-input>
+                                    <or-mwc-input ?readonly="${readonly}"
+                                                  class="${isServiceUser ? "hidden" : ""}"
+                                                  .label="${i18next.t("firstName")}"
+                                                  .type="${InputType.TEXT}" minLength="1"
+                                                  .value="${user.firstName}"
+                                                  @or-mwc-input-changed="${(e: OrInputChangedEvent) => {user.firstName = e.detail.value; this.onUserChanged(e, suffix)}}"></or-mwc-input>
+                                    <or-mwc-input ?readonly="${readonly}"
+                                                  class="${isServiceUser ? "hidden" : ""}"
+                                                  .label="${i18next.t("surname")}"
+                                                  .type="${InputType.TEXT}" minLength="1"
+                                                  .value="${user.lastName}"
+                                                  @or-mwc-input-changed="${(e: OrInputChangedEvent) => {user.lastName = e.detail.value; this.onUserChanged(e, suffix)}}"></or-mwc-input>
 
-                                <!-- password -->
-                                <h5>${i18next.t("password")}</h5>
-                                ${user.serviceAccount ? html`
-                                    <or-mwc-input id="password-${suffix}" readonly
-                                                  .label="${i18next.t("secret")}"
-                                                  .value="${user.secret}"
-                                                  .type="${InputType.TEXT}"></or-mwc-input>
-                                    <or-mwc-input ?readonly="${!user.id || readonly}"
-                                                  .label="${i18next.t("regenerateSecret")}"
-                                                  .type="${InputType.BUTTON}"
-                                                  @or-mwc-input-changed="${(ev) => this._regenerateSecret(ev, user, "password-"+suffix)}"></or-mwc-input>`
-                                        : html`
-                                    <or-mwc-input id="password-${suffix}"
-                                              ?readonly="${readonly}"
-                                              .label="${i18next.t("password")}"
-                                              .type="${InputType.PASSWORD}" min="1"
-                                              @or-mwc-input-changed="${(e: OrInputChangedEvent) => {this._onPasswordChanged(user, suffix)}}"></or-mwc-input>
-                                    <or-mwc-input id="repeatPassword-${suffix}"
-                                              helperPersistent ?readonly="${readonly}"
-                                              .label="${i18next.t("repeatPassword")}"
-                                              .type="${InputType.PASSWORD}" min="1"
-                                              @or-mwc-input-changed="${(e: OrInputChangedEvent) => {this._onPasswordChanged(user, suffix)}}"></or-mwc-input>
-                                `}
-                            </div>
-
-                            <div class="column">
-                                <h5>${i18next.t("settings")}</h5>
-                                <!-- enabled -->
-                                <or-mwc-input ?readonly="${readonly}"
-                                              .label="${i18next.t("active")}"
-                                              .type="${InputType.CHECKBOX}"
-                                              .value="${user.enabled}"
-                                              @or-mwc-input-changed="${(e: OrInputChangedEvent) => user.enabled = e.detail.value}"
-                                              style="height: 56px;"></or-mwc-input>
-
-                                <!-- is admin -->
-                                <or-mwc-input ?readonly="${true}"
-                                              .label="${i18next.t("fullAccessLabel")}"
-                                              .type="${InputType.CHECKBOX}"
-                                              .value="${user.enabled}"
-                                              style="height: 56px;"></or-mwc-input>
-                                
-                                <!-- composite roles -->
-                                <or-mwc-input
-                                    ?readonly="${readonly}"
-                                    class="${isServiceUser ? "hidden" : ""}"
-                                    ?disabled="${isSameUser}"
-                                    .value="${user.roles && user.roles.length > 0 ? user.roles.filter(r => r.composite).map(r => r.name) : undefined}"
-                                    .type="${InputType.SELECT}" multiple
-                                    .options="${compositeRoleOptions}" 
-                                    .label="${i18next.t("role_plural")}"
-                                    @or-mwc-input-changed="${(e: OrInputChangedEvent) => {
-                                        const roleNames = e.detail.value as string[];
-                                        user.roles = this._compositeRoles.filter(cr => roleNames.some(name => cr.name === name)).map(r => {return {...r, assigned: true};});
-                                        this._updateUserSelectedRoles(user, suffix);
-                                    }}"></or-mwc-input>
-
-                                <!-- roles -->
-                                <div style="display:flex;flex-wrap:wrap;" id="role-list-${suffix}">
-                                    ${this._roles.map(r => {
-                                        return html`
-                                            <or-mwc-input 
-                                                ?readonly="${readonly}"
-                                                ?disabled="${implicitRoleNames.find(name => r.name === name)}"
-                                                .value="${!!user.roles.find(userRole => userRole.name === r.name) || implicitRoleNames.some(implicitRoleName => implicitRoleName === r.name)}"
-                                                .type="${InputType.CHECKBOX}"
-                                                .label="${r.name}"
-                                                style="width:25%;margin:0"
-                                                @or-mwc-input-changed="${(e: OrInputChangedEvent) => {
-                                                    if (!!e.detail.value) {
-                                                        user.roles.push({...r, assigned: true});
-                                                    } else {
-                                                        user.roles = user.roles.filter(e => e.name !== r.name);
-                                                    }
-                                                }}"></or-mwc-input>
-                                        `
-                                    })}
+                                    <!-- password -->
+                                    <h5>${i18next.t("password")}</h5>
+                                    ${user.serviceAccount ? html`
+                                                <or-mwc-input id="password-${suffix}" readonly
+                                                              .label="${i18next.t("secret")}"
+                                                              .value="${user.secret}"
+                                                              .type="${InputType.TEXT}"></or-mwc-input>
+                                                <or-mwc-input ?readonly="${!user.id || readonly}"
+                                                              .label="${i18next.t("regenerateSecret")}"
+                                                              .type="${InputType.BUTTON}"
+                                                              @or-mwc-input-changed="${(ev) => this._regenerateSecret(ev, user, "password-" + suffix)}"></or-mwc-input>`
+                                            : html`
+                                                <or-mwc-input id="password-${suffix}"
+                                                              ?readonly="${readonly}"
+                                                              .label="${i18next.t("password")}"
+                                                              .type="${InputType.PASSWORD}" min="1"
+                                                              @or-mwc-input-changed="${(e: OrInputChangedEvent) => {
+                                                                  this._onPasswordChanged(user, suffix);
+                                                                  this.onUserChanged(e, suffix);
+                                                              }}"></or-mwc-input>
+                                                <or-mwc-input id="repeatPassword-${suffix}"
+                                                              helperPersistent ?readonly="${readonly}"
+                                                              .label="${i18next.t("repeatPassword")}"
+                                                              .type="${InputType.PASSWORD}" min="1"
+                                                              @or-mwc-input-changed="${(e: OrInputChangedEvent) => {
+                                                                  this._onPasswordChanged(user, suffix);
+                                                                  this.onUserChanged(e, suffix);
+                                                              }}"></or-mwc-input>
+                                            `}
                                 </div>
 
-                                <!-- restricted access -->
-                                <!-- placeholder -->
+                                <div class="column">
+                                    <h5>${i18next.t("settings")}</h5>
+                                    <!-- enabled -->
+                                    <or-mwc-input ?readonly="${readonly}"
+                                                  .label="${i18next.t("active")}"
+                                                  .type="${InputType.CHECKBOX}"
+                                                  .value="${user.enabled}"
+                                                  @or-mwc-input-changed="${(e: OrInputChangedEvent) => user.enabled = e.detail.value}"
+                                                  style="height: 56px;"></or-mwc-input>
+
+                                    <!-- composite roles -->
+                                    <or-mwc-input
+                                            ?readonly="${readonly}"
+                                            class="${isServiceUser ? "hidden" : ""}"
+                                            ?disabled="${isSameUser}"
+                                            .value="${user.roles && user.roles.length > 0 ? user.roles.filter(r => r.composite).map(r => r.name) : undefined}"
+                                            .type="${InputType.SELECT}" multiple
+                                            .options="${compositeRoleOptions}"
+                                            .label="${i18next.t("role_plural")}"
+                                            @or-mwc-input-changed="${(e: OrInputChangedEvent) => {
+                                                const roleNames = e.detail.value as string[];
+                                                user.roles = this._compositeRoles.filter(cr => roleNames.some(name => cr.name === name)).map(r => {
+                                                    return {...r, assigned: true};
+                                                });
+                                                this._updateUserSelectedRoles(user, suffix);
+                                            }}"></or-mwc-input>
+
+                                    <!-- roles -->
+                                    <div style="display:flex;flex-wrap:wrap;margin-bottom: 20px;"
+                                         id="role-list-${suffix}">
+                                        ${this._roles.map(r => {
+                                            return html`
+                                                <or-mwc-input
+                                                        ?readonly="${readonly}"
+                                                        ?disabled="${implicitRoleNames.find(name => r.name === name)}"
+                                                        .value="${!!user.roles.find(userRole => userRole.name === r.name) || implicitRoleNames.some(implicitRoleName => implicitRoleName === r.name)}"
+                                                        .type="${InputType.CHECKBOX}"
+                                                        .label="${r.name}"
+                                                        style="width:25%;margin:0"
+                                                        @or-mwc-input-changed="${(e: OrInputChangedEvent) => {
+                                                            if (!!e.detail.value) {
+                                                                user.roles.push({...r, assigned: true});
+                                                            } else {
+                                                                user.roles = user.roles.filter(e => e.name !== r.name);
+                                                            }
+                                                        }}"></or-mwc-input>
+                                            `
+                                        })}
+                                    </div>
+
+                                    <!-- restricted access -->
+                                    <div>
+                                        <or-mwc-input
+                                                id="${user.id}-restricted"
+                                                .type="${InputType.CHECKBOX}"
+                                                .label="${i18next.t("restrictedAccessToAssets") + ':'}"
+                                                @or-mwc-input-changed="${(ev: OrInputChangedEvent) => this._addRemoveRealmRole(user, RESTRICTED_USER_REALM_ROLE, ev.detail.value as boolean)}"
+                                                .value="${user.realmRoles ? !!user.realmRoles.find(r => r.name === RESTRICTED_USER_REALM_ROLE) : undefined}"></or-mwc-input>
+
+                                        <or-mwc-input outlined
+                                                      .type="${InputType.BUTTON}"
+                                                      .label="${i18next.t("selectRestrictedAssets", {number: user.userAssetLinks.length})}"
+                                                      @click="${(ev: MouseEvent) => this._openAssetSelector(ev, user)}"></or-mwc-input>
+                                    </div>
+                                </div>
                             </div>
-                        </div>
 
-                        ${readonly ? `` : html`
-                            <div class="row" style="margin-bottom: 0;">
+                            ${readonly ? `` : html`
+                                <div class="row" style="margin-bottom: 0;">
 
-                                ${!isSameUser && user.id ? html`
-                                    <or-mwc-input .label="${i18next.t("delete")}"
+                                    ${!isSameUser && user.id ? html`
+                                        <or-mwc-input .label="${i18next.t("delete")}"
+                                                      .type="${InputType.BUTTON}"
+                                                      @click="${() => this._deleteUser(user)}"></or-mwc-input>
+                                    ` : ``}
+                                    ${!user.id ? html`
+                                        <or-mwc-input .label="${i18next.t("cancel")}"
+                                                      .type="${InputType.BUTTON}"
+                                                      @click="${() => addCancel()}"></or-mwc-input>
+                                    ` : ``}
+                                    <or-mwc-input id="savebtn-${suffix}" style="margin-left: auto;"
+                                                  .label="${i18next.t(user.id ? "save" : "create")}"
                                                   .type="${InputType.BUTTON}"
-                                                  @click="${() => this._deleteUser(user)}"></or-mwc-input>
-                                ` : ``}
-                                ${!user.id ? html`<or-mwc-input .label="${i18next.t("cancel")}"
-                                          .type="${InputType.BUTTON}"
-                                          @click="${() => addCancel()}"></or-mwc-input>
-                                ` : ``}
-                                <or-mwc-input id="savebtn-${suffix}" style="margin-left: auto;"
-                                      .label="${i18next.t(user.id ? "save" : "create")}"
-                                      .type="${InputType.BUTTON}"
-                                      @click="${() => this._createUpdateUser(user)}"></or-mwc-input>
-                            </div>
-                        `}
-                    </div>
+                                                  @click="${() => this._createUpdateUser(user)}"></or-mwc-input>
+                                </div>
+                            `}
+                        </div>
+                    `}
                 </td>
             </tr>
-        `
+        `;
+    }
+
+    protected _addRemoveRealmRole(user: UserModel, roleName: string, add: boolean) {
+        if (!add) {
+            user.realmRoles = user.realmRoles.filter(role => role.name !== roleName);
+        } else {
+            const role = this._realmRoles.find(role => role.name === roleName);
+            if (role) {
+                user.realmRoles.push({...role, assigned: true});
+            }
+        }
+        this.requestUpdate();
     }
 }

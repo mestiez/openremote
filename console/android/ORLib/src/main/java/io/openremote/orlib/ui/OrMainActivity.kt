@@ -34,6 +34,7 @@ import io.openremote.orlib.databinding.ActivityOrMainBinding
 import io.openremote.orlib.models.ORAppConfig
 import io.openremote.orlib.network.ApiManager
 import io.openremote.orlib.service.GeofenceProvider
+import io.openremote.orlib.service.QrScannerProvider
 import org.json.JSONException
 import org.json.JSONObject
 import java.util.*
@@ -53,6 +54,7 @@ open class OrMainActivity : Activity() {
     private var webViewLoaded = false
     private var sharedPreferences: SharedPreferences? = null
     private var geofenceProvider: GeofenceProvider? = null
+    private var qrScannerProvider: QrScannerProvider? = null
     private var consoleId: String? = null
     private var appConfig: ORAppConfig? = null
     private var onDownloadCompleteReciever: BroadcastReceiver = object : BroadcastReceiver() {
@@ -519,6 +521,20 @@ open class OrMainActivity : Activity() {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
     }
 
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == QrScannerProvider.REQUEST_SCAN_QR) {
+            val qrResult = data?.getStringExtra("result")
+
+            val response = hashMapOf(
+                "action" to "SCAN_QR",
+                "provider" to "qr",
+                "data" to hashMapOf("result" to qrResult)
+            )
+            notifyClient(response)
+        }
+    }
+
     private inner class WebAppInterface(
         private val activity: Activity
     ) {
@@ -554,6 +570,9 @@ open class OrMainActivity : Activity() {
                                 }
                                 provider.equals("storage", ignoreCase = true) -> {
                                     handleStorageProviderMessage(it)
+                                }
+                                provider.equals("qr", ignoreCase = true) -> {
+                                    handleQrScannerProviderMessage(it)
                                 }
                             }
                         }
@@ -713,6 +732,34 @@ open class OrMainActivity : Activity() {
             }
         }
 
+        @Throws(JSONException::class)
+        private fun handleQrScannerProviderMessage(data: JSONObject) {
+            val action = data.getString("action")
+            if (qrScannerProvider == null) {
+                qrScannerProvider = QrScannerProvider(activity)
+            }
+            when {
+                action.equals("PROVIDER_INIT", ignoreCase = true) -> {
+                    val initData: Map<String, Any> = qrScannerProvider!!.initialize()
+                    notifyClient(initData)
+                }
+                action.equals("PROVIDER_ENABLE", ignoreCase = true) -> {
+
+                    qrScannerProvider?.enable(object : QrScannerProvider.ScannerCallback {
+                            override fun accept(responseData: Map<String, Any>) {
+                                notifyClient(responseData)
+                            }
+                        })
+                }
+                action.equals("PROVIDER_DISABLE", ignoreCase = true) -> {
+                    val response = qrScannerProvider?.disable()
+                    notifyClient(response)
+                }
+                action.equals("SCAN_QR", ignoreCase = true) -> {
+                    qrScannerProvider?.startScanner(this@OrMainActivity)
+                }
+            }
+        }
     }
 
     private fun notifyClient(data: Map<String, Any?>?) {

@@ -34,7 +34,7 @@ services:
   # map a Docker volume or host directory to access/store proxy configuration files
   # and SSL certificates.
   proxy:
-    image: openremote/proxy:${PROXY_VERSION:-2.1.2.3}
+    image: openremote/proxy:${PROXY_VERSION:-2.1.2.4}
     restart: always
     # Override the haproxy.cfg with custom file
     #volumes:
@@ -247,6 +247,12 @@ services:
       # value by using the DATA_POINTS_MAX_AGE_DAYS AssetMeta item).
       # DATA_POINTS_MAX_AGE_DAYS = 30
 
+      # App id for the API of OpenWeather: https://openweathermap.org
+      # OPEN_WEATHER_API_APP_ID
+
+      # API key for the API of ForecastSolar: https://forecast.solar
+      # FORECAST_SOLAR_API_KEY
+
       # Custom JVM options (increase heap size if required)
       MANAGER_JAVA_OPTS: ${MANAGER_JAVA_OPTS:--Xms400m -Xmx400m
        -XX:CompressedClassSpaceSize=25m -XX:MaxMetaspaceSize=150m
@@ -259,7 +265,7 @@ services:
 
   # Keycloak identity provider
   keycloak:
-    image: openremote/keycloak:${KEYCLOAK_VERSION:-13.0.1.2}
+    image: openremote/keycloak:${KEYCLOAK_VERSION:-13.0.1.3}
     restart: always
     # Map any custom themes into the /deployment/keycloak/themes dir:
     #volumes:

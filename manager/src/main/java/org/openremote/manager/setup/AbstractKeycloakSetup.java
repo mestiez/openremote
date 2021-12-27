@@ -32,6 +32,8 @@ import org.openremote.model.security.User;
 import java.util.Arrays;
 import java.util.Collections;
 
+import static org.openremote.manager.security.ManagerKeycloakIdentityProvider.KEYCLOAK_USER_ATTRIBUTE_EMAIL_NOTIFICATIONS_DISABLED;
+import static org.openremote.manager.security.ManagerKeycloakIdentityProvider.KEYCLOAK_USER_ATTRIBUTE_PUSH_NOTIFICATIONS_DISABLED;
 import static org.openremote.model.Constants.KEYCLOAK_CLIENT_ID;
 
 public abstract class AbstractKeycloakSetup implements Setup {
@@ -81,12 +83,22 @@ public abstract class AbstractKeycloakSetup implements Setup {
     }
 
     protected User createUser(String realm, String username, String password, String firstName, String lastName, String email, boolean enabled, ClientRole[] roles) {
+        return  createUser(realm, username, password, firstName, lastName, email, enabled, false, false, roles);
+    }
+
+    protected User createUser(String realm, String username, String password, String firstName, String lastName, String email, boolean enabled, boolean emailNotificationsDisabled, boolean pushNotificationsDisabled, ClientRole[] roles) {
         User user = new User();
         user.setUsername(username);
         user.setFirstName(firstName);
         user.setLastName(lastName);
         user.setEmail(email);
         user.setEnabled(enabled);
+        if (emailNotificationsDisabled) {
+            user.setAttribute(KEYCLOAK_USER_ATTRIBUTE_EMAIL_NOTIFICATIONS_DISABLED, "true");
+        }
+        if (pushNotificationsDisabled) {
+            user.setAttribute(KEYCLOAK_USER_ATTRIBUTE_PUSH_NOTIFICATIONS_DISABLED, "true");
+        }
         user = keycloakProvider.createUpdateUser(realm, user, password);
         if (user == null) {
             return null;

@@ -121,6 +121,9 @@ public class DefaultMQTTHandler extends MQTTHandler {
 
         Map<String, Object> headers = prepareHeaders(connection);
         headers.put(ConnectionConstants.SESSION_OPEN, true);
+        // Put a close connection runnable into the headers for the client event service
+        Runnable closeRunnable = () -> mqttBrokerService.forceDisconnect(connection.getClientId());
+        headers.put(ConnectionConstants.SESSION, closeRunnable);
         messageBrokerService.getProducerTemplate().sendBodyAndHeaders(ClientEventService.CLIENT_EVENT_QUEUE, null, headers);
         LOG.fine("Connected: " + connection);
     }
@@ -253,7 +256,7 @@ public class DefaultMQTTHandler extends MQTTHandler {
 
 //            Asset<?> asset;
 //            if(identityProvider.isRestrictedUser(authContext.getUserId())) {
-//                Optional<UserAsset> userAsset = assetStorageService.findUserAssets(connection.realm, authContext.getUserId(), assetId).stream().findFirst();
+//                Optional<UserAssetLink> userAsset = assetStorageService.findUserAssets(connection.realm, authContext.getUserId(), assetId).stream().findFirst();
 //                asset = userAsset.map(value -> assetStorageService.find(value.getId().getAssetId())).orElse(null);
 //            } else {
 //                asset = assetStorageService.find(assetId, false);

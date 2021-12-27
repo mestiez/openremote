@@ -19,17 +19,21 @@
  */
 package org.openremote.test;
 
+import org.openremote.agent.protocol.io.AbstractNettyIOClient;
 import org.openremote.container.Container;
 import org.openremote.model.asset.Asset;
-import org.openremote.model.asset.UserAsset;
+import org.openremote.model.asset.UserAssetLink;
 import org.openremote.model.gateway.GatewayConnection;
 import org.openremote.model.rules.AssetRuleset;
 import org.openremote.model.rules.GlobalRuleset;
-import org.openremote.model.rules.Ruleset;
 import org.openremote.model.rules.TenantRuleset;
+import org.openremote.model.security.Role;
+import org.openremote.model.security.User;
+import org.openremote.model.util.Pair;
 import org.spockframework.runtime.extension.AbstractGlobalExtension;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Used to store state for tests to help improve test performance
@@ -43,7 +47,17 @@ public class TestFixture extends AbstractGlobalExtension {
     public static List<AssetRuleset> assetRulesets;
     public static List<GatewayConnection> gatewayConnections;
     public static List<Asset<?>> assets;
-    public static List<UserAsset> userAssets;
+    public static List<UserAssetLink> userAssets;
+    public static List<User> users;
+
+    @Override
+    public void start() {
+        // Force RECONNECT times to be short to improve test run times
+        AbstractNettyIOClient.RECONNECT_DELAY_INITIAL_MILLIS = 50;
+        AbstractNettyIOClient.RECONNECT_DELAY_JITTER_MILLIS = 0;
+        AbstractNettyIOClient.RECONNECT_DELAY_MAX_MILLIS = 50;
+        super.start();
+    }
 
     @Override
     public void stop() {

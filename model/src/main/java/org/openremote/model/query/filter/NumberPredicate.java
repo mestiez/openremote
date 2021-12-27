@@ -19,6 +19,7 @@
  */
 package org.openremote.model.query.filter;
 
+import com.kjetland.jackson.jsonSchema.annotations.JsonSchemaDescription;
 import org.openremote.model.query.AssetQuery;
 import org.openremote.model.util.NumberComparator;
 import org.openremote.model.util.ValueUtil;
@@ -26,6 +27,10 @@ import org.openremote.model.util.ValueUtil;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
+/**
+ * Predicate for number values; will match based on configured options.
+ */
+@JsonSchemaDescription("Predicate for number values; will match based on configured options.")
 public class NumberPredicate extends ValuePredicate {
 
     public static final String name = "number";

@@ -51,6 +51,7 @@ import java.util.stream.Collectors;
 
 import static org.openremote.container.util.MapAccess.getBoolean;
 import static org.openremote.container.util.MapAccess.getInteger;
+import static org.openremote.manager.security.ManagerKeycloakIdentityProvider.KEYCLOAK_USER_ATTRIBUTE_EMAIL_NOTIFICATIONS_DISABLED;
 import static org.openremote.model.Constants.*;
 
 public class EmailNotificationHandler implements NotificationHandler {
@@ -154,10 +155,10 @@ public class EmailNotificationHandler implements NotificationHandler {
                         User[] users = targetType == Notification.TargetType.TENANT
                             ? managerIdentityService
                                 .getIdentityProvider()
-                                .getUsers(new UserQuery().tenant(new TenantPredicate(targetId)))
+                                .queryUsers(new UserQuery().tenant(new TenantPredicate(targetId)))
                             : managerIdentityService
                                 .getIdentityProvider()
-                                .getUsers(Collections.singletonList(targetId));
+                                .queryUsers(new UserQuery().ids(targetId));
 
                         if (users.length == 0) {
                             if (targetType == Notification.TargetType.USER) {
@@ -170,11 +171,9 @@ public class EmailNotificationHandler implements NotificationHandler {
 
                         mappedTargets.addAll(
                             Arrays.stream(users)
+                                .filter(user -> !Boolean.parseBoolean(user.getAttributes().getOrDefault(KEYCLOAK_USER_ATTRIBUTE_EMAIL_NOTIFICATIONS_DISABLED, Collections.singletonList("false")).get(0)))
                                 .map(user -> {
                                     Notification.Target userAssetTarget = new Notification.Target(Notification.TargetType.USER, user.getId());
-
-
-
                                     userAssetTarget.setData(new EmailNotificationMessage.Recipient(user.getFullName(), user.getEmail()));
                                     return userAssetTarget;
                                 })
@@ -193,7 +192,7 @@ public class EmailNotificationHandler implements NotificationHandler {
                                 .paths(new PathPredicate(targetId))
                                 .attributes(new AttributePredicate(
                                     new StringPredicate(Asset.EMAIL.getName()),
-                                    new ValueNotEmptyPredicate())));
+                                    new ValueEmptyPredicate().negate(true))));
 
                         if (assets.isEmpty()) {
                             LOG.fine("No assets with email attribute descendants of target asset");

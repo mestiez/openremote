@@ -30,9 +30,8 @@ import org.openremote.model.security.*;
 import org.openremote.model.util.TextUtil;
 
 import javax.persistence.TypedQuery;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import static org.openremote.manager.asset.AssetStorageService.buildMatchFilter;
@@ -45,13 +44,7 @@ import static org.openremote.model.Constants.MASTER_REALM;
  */
 public interface ManagerIdentityProvider extends IdentityProvider {
 
-    User[] getUsers(String realm);
-
-    User[] getServiceUsers(String realm);
-
-    User[] getUsers(List<String> userIds);
-
-    User[] getUsers(UserQuery userQuery);
+    User[] queryUsers(UserQuery userQuery);
 
     User getUser(String realm, String userId);
 
@@ -67,11 +60,11 @@ public interface ManagerIdentityProvider extends IdentityProvider {
 
     void updateUserAttributes(String realm, String userId, Map<String, List<String>> attributes);
 
+    Map<String, List<String>> getUserAttributes(String realm, String userId);
+
     Role[] getRoles(String realm, String client);
 
     void updateClientRoles(String realm, String client, Role[] roles);
-
-    void updateRealmRoles(String realm, Role[] roles);
 
     Role[] getUserRoles(String realm, String userId, String client);
 
@@ -116,17 +109,24 @@ public interface ManagerIdentityProvider extends IdentityProvider {
      * BELOW ARE STATIC HELPER METHODS
      */
 
-    static User[] getUsersFromDb(PersistenceService persistenceService, UserQuery userQuery) {
+    default String[] addRealmRoles(String realm, String userId, String...roles) {
+        Set<String> realmRoles = Arrays.stream(getUserRealmRoles(realm, userId)).map(Role::getName).collect(Collectors.toCollection(LinkedHashSet::new));
+        realmRoles.addAll(Arrays.asList(roles));
+        return realmRoles.toArray(new String[0]);
+    }
+
+    static User[] getUsersFromDb(PersistenceService persistenceService, UserQuery query) {
         StringBuilder sb = new StringBuilder();
         List<Object> parameters = new ArrayList<>();
+        final UserQuery userQuery = query != null ? query : new UserQuery();
 
         // BUILD SELECT
-        sb.append("SELECT DISTINCT(u)");
+        sb.append("SELECT u");
 
         // BUILD FROM
         sb.append(" FROM User u");
         if (userQuery.assetPredicate != null || userQuery.pathPredicate != null) {
-            sb.append(" join UserAsset ua on ua.id.userId = u.id");
+            sb.append(" join UserAssetLink ua on ua.id.userId = u.id");
         }
 
         // BUILD WHERE
@@ -163,24 +163,78 @@ public interface ManagerIdentityProvider extends IdentityProvider {
                 }
                 isFirst = false;
                 final int pos = parameters.size() + 1;
-                sb.append(pred.caseSensitive ? "u.username " : "upper(u.username)");
+                sb.append("upper(u.username)"); // No case support for username
                 sb.append(buildMatchFilter(pred, pos));
                 parameters.add(pred.prepareValue());
             }
             sb.append(")");
         }
-
-        // BUILD LIMIT
-        if (userQuery.limit > 0) {
-            sb.append(" LIMIT ").append(userQuery.limit);
+        if (userQuery.select != null && userQuery.select.excludeRegularUsers) {
+            sb.append(" and u.secret IS NOT NULL");
+        } else if (userQuery.select != null && userQuery.select.excludeServiceUsers) {
+            sb.append(" and u.secret IS NULL");
         }
 
-        return persistenceService.doReturningTransaction(entityManager -> {
-            TypedQuery<User> query = entityManager.createQuery(sb.toString(), User.class);
-            IntStream.range(0, parameters.size()).forEach(i -> query.setParameter(i + 1, parameters.get(i)));
-            List<User> users = query.getResultList();
-            return users.toArray(new User[users.size()]);
+        // BUILD ORDER BY
+        if (userQuery.orderBy != null) {
+            if (userQuery.orderBy.property != null) {
+                sb.append(" ORDER BY");
+                switch(userQuery.orderBy.property) {
+                    case CREATED_ON:
+                        sb.append(" u.createdOn");
+                        break;
+                    case FIRST_NAME:
+                        sb.append(" u.firstName");
+                        break;
+                    case LAST_NAME:
+                        sb.append(" u.lastName");
+                        break;
+                    case USERNAME:
+                        // Remove service user prefix
+                        sb.append(" replace(u.username, '").append(User.SERVICE_ACCOUNT_PREFIX).append("', '')");
+                        break;
+                    case EMAIL:
+                        sb.append(" u.email");
+                        break;
+                    default:
+                        throw new UnsupportedOperationException("Unsupported order by value: " + userQuery.orderBy.property);
+                }
+                if (userQuery.orderBy.descending) {
+                    sb.append(" DESC");
+                }
+            }
+        }
+
+        List<User> users = persistenceService.doReturningTransaction(entityManager -> {
+            TypedQuery<User> sqlQuery = entityManager.createQuery(sb.toString(), User.class);
+            IntStream.range(0, parameters.size()).forEach(i -> sqlQuery.setParameter(i + 1, parameters.get(i)));
+
+            if (userQuery.limit != null && userQuery.limit > 0) {
+                sqlQuery.setMaxResults(userQuery.limit);
+            }
+
+            if (userQuery.offset != null && userQuery.offset > 0) {
+                sqlQuery.setFirstResult(query.offset);
+            }
+
+            return sqlQuery.getResultList();
         });
+
+        if (userQuery.select != null && (userQuery.select.basic || userQuery.select.excludeSystemUsers)) {
+            // TODO: Move this within the query
+            return users.stream().filter(user -> {
+                boolean keep = !userQuery.select.excludeSystemUsers || !user.isSystemAccount();
+                if (keep && userQuery.select.basic) {
+                    // Clear out data and leave only basic info
+                    user.setAttributes(null);
+                    user.setEmail(null);
+                    user.setRealmId(null);
+                    user.setSecret(null);
+                }
+                return keep;
+            }).toArray(User[]::new);
+        }
+        return users.toArray(new User[0]);
     }
 
     static User getUserByUsernameFromDb(PersistenceService persistenceService, String realm, String username) {
@@ -226,7 +280,7 @@ public interface ManagerIdentityProvider extends IdentityProvider {
 
     static Tenant getTenantFromDb(PersistenceService persistenceService, String realm) {
         return persistenceService.doReturningTransaction(em -> {
-                List<Tenant> tenants = em.createQuery("select t from Tenant t where t.realm = :realm and t.enabled = true and (t.notBefore is null or t.notBefore = 0 or to_timestamp(t.notBefore) <= now())", Tenant.class)
+                List<Tenant> tenants = em.createQuery("select t from Tenant t where t.realm = :realm", Tenant.class)
                     .setParameter("realm", realm).getResultList();
                 return tenants.size() == 1 ? tenants.get(0) : null;
             }

@@ -8,6 +8,7 @@
   "asset_plural": "Assets",
   "assets": "Assets",
   "attribute": "Attribuut",
+  "attributes": "Attributen",
   "attribute_plural": "Attributen",
   "optional_attributes": "Optionele attributen",
   "insights": "Inzicht",
@@ -17,6 +18,7 @@
   "selectLanguage": "Taal kiezen",
   "logout": "Uitloggen",
   "login": "Log in",
+  "edit": "Aanpassen",
   "monday": "maandag",
   "tuesday": "dinsdag",
   "wednesday": "woensdag",
@@ -24,6 +26,13 @@
   "friday": "vrijdag",
   "saturday": "zaterdag",
   "sunday": "zondag",
+  "MO": "MA",
+  "TU": "DI",
+  "WE": "WO",
+  "TH": "DO",
+  "FR": "VR",
+  "SA": "ZA",
+  "SU": "ZO",
   "sceneStartTime": "Scene start tijd",
   "sceneConfiguration": "Scene configuratie",
   "temperature": "Temperatuur",
@@ -87,6 +96,7 @@
   "deleteAssetsFailed": "Verwijderen van de asset(s) is niet gelukt",
   "ok": "OK",
   "cancel": "Annuleren",
+  "discard": "weggooien",
   "createdOn": "Aangemaakt op",
   "createdOnWithDate": "Aangemaakt: {{-date, lll}}",
   "updatedWithDate": "Bijgewerkt: {{-date, lll}}",
@@ -107,7 +117,10 @@
   "ending": "Einde",
   "timeframe": "Tijdvak",
   "addAttribute": "Attribuut toevoegen",
-  "clearTable": "Leeg maken",
+  "selectAttributes": "Kies attributen",
+  "selectAttribute": "Kies attribuut",
+  "clearTable": "Wissen",
+  "export": "export",
   "addAssetAttribute": "Voeg asset attribuut toe",
   "add": "toevoegen",
   "EQUALS_COMPARATOR": "Gelijk aan",
@@ -134,7 +147,10 @@
   "output": "Output",
   "selectAsset": "Selecteer asset",
   "selectAssetOnTheLeft": "Selecteer een asset aan de linkerkant",
-  "noRuleStateAttributes": "Geen rule state attributes",
+  "noRuleStateAttributes": "Geen attributen met 'rule state' of 'agent link' configuratie item gevonden",
+  "noDatapointsAttributes": "Geen attributen met 'store data points' of 'agent link' configuratie item gevonden",
+  "noAttributesToShow": "Geen attributen gevonden",
+  "noDatapointsOrRuleStateAttributes": "Geen attributen met 'rule state', 'store data points', of 'agent link' configuratie item gevonden",
   "copy": "Kopiëren",
   "paste": "Plakken",
   "delete": "Verwijderen",
@@ -260,6 +276,9 @@
   "repeatPassword": "Herhaal wachtwoord",
   "details": "Details",
   "permissions":"Rechten",
+  "restrictAccess": "Beperkte toegang",
+  "selectRestrictedAssets": "{{number}} assets",
+  "restrictedAccessToAssets": "Beperkte toegang tot",
   "fullAccessLabel":"Admin: volledige toegang; gebruikers en rollen beheren",
   "noChildAssets": "Geen onderliggende assets",
   "account": "Account",
@@ -267,6 +286,8 @@
   "editDelta": "Delta",
   "editCurrentValue": "Decimalen",
   "decimals": "Decimalen",
+  "percentage": "Percentage",
+  "absolute": "Absoluut",
   "editAsset": "Aanpassen",
   "viewAsset": "Bekijk",
   "addAsset": "Asset toevoegen",
@@ -334,42 +355,31 @@
     "hertz": "Hz",
     "rpm": "rpm",
     "carbon": "CO2",
-    "meta": {
-    },
-    "attribute": {
-    }
+    "meta": {},
+    "attribute": {}
   },
   "format": {
-    "meta": {
-    },
-    "attribute": {
-    }
+    "meta": {},
+    "attribute": {}
   },
   "constraints": {
-    "meta": {
-    },
-    "attribute": {
-    }
+    "meta": {},
+    "attribute": {}
   },
   "label": {
     "asset": {
       "ElectricityProducerSolarAsset": "Zonnepaneel asset",
       "ElectricityProducerWindAsset": "Windturbine asset"
     },
-    "meta": {
-    },
-    "attribute": {
-    },
-    "value": {
-    }
+    "meta": {},
+    "attribute": {},
+    "value": {}
   },
   "metaOverrides": {
-    "label": {
-    }
+    "label": {}
   },
   "attributeOverrides": {
-    "label": {
-    }
+    "label": {}
   },
   "addMetaItems": "Voeg configuratie item toe",
   "loseChanges": "Wijzigingen negeren?",
@@ -424,13 +434,32 @@
   "agentTypeMismatch": "Agent type mismatch",
   "loadFailedRoles": "Rollen ophalen mislukt",
   "loadFailedUsers": "Gebruikers ophalen mislukt",
-  "loadFailedServiceUsers": "Service gebruikers ophalen mislukt",
-  "key": "Key",
-  "anyOfPickerLabel": "{{label}} type",
+  "loadFailedUserInfo": "Gebruikersinfo ophalen mislukt",
   "validation": {
+    "noSchemaMatchFound": "Geen schema match gevonden",
+    "invalidAsset": "Asset is niet geldig",
+    "invalidAttributeValue": "Ongeldige attribuutwaarde voor attribuut '{{attrName}}'",
+    "invalidMetaItemValue": "Ongeldige configuratie-item waarde voor '{{metaName}}' op attribuut '{{attrName}}'",
     "invalidNumber": "Ongeldig nummer",
     "invalidJSON": "JSON ongeldig",
     "invalidDate": "Datum ongeldig",
     "keyAlreadyExists": "Key bestaat reeds"
+  },
+  "autoProvisioning": "Auto provisioning",
+  "provisioningConfigs": "Provisioning configuraties",
+  "loadFailedProvisioningConfigs": "Provisioning configuraties ophalen mislukt",
+  "deleteProvisioningConfigConfirm":"Weet je zeker dat je deze provisioning configuratie wil verwijderen?\nClients die deze configuratie gebruiken kunnen niet langer verbinden.",
+  "assetTemplate": "Asset template",
+  "createAsRestrictedUser": "Gebruiker met beperkte toegang maken",
+  "ignoreExpiryDate": "Vervaldatum negeren",
+  "CACertPem": "CA Certificaat (PEM)",
+  "schema": {
+    "noDescriptionAvailable": "Geen beschrijving beschikbaar",
+    "selectTypeMessage": "Kies een type",
+    "keyInputLabel": "Key",
+    "anyOfPickerLabel": "{{label}} type",
+    "title": {
+      "indexedItem": "Item {{index}}"
+    }
   }
 }

@@ -1,26 +1,15 @@
-import {css, html, LitElement, TemplateResult, unsafeCSS, PropertyValues} from "lit";
+import {css, html, LitElement, PropertyValues, TemplateResult, unsafeCSS} from "lit";
 import {customElement, property, query} from "lit/decorators.js";
 import {MDCDialog} from "@material/dialog";
 import "@openremote/or-translate";
 import "./or-mwc-input";
-import {InputType, OrInputChangedEvent} from "./or-mwc-input";
-import { i18next } from "@openremote/or-translate";
-import {DefaultColor2, DefaultColor4, DefaultColor5, Util } from "@openremote/core";
-import { Asset, AssetEvent, Attribute, AttributeRef, WellknownMetaItems } from "@openremote/model";
-import manager from "@openremote/core";
-import {ListItem, ListType, OrMwcListChangedEvent} from "./or-mwc-list";
+import {InputType} from "./or-mwc-input";
+import {i18next} from "@openremote/or-translate";
+import {Util} from "@openremote/core";
 
 const dialogStyle = require("@material/dialog/dist/mdc.dialog.css");
 const listStyle = require("@material/list/dist/mdc.list.css");
 
-export interface DialogConfig {
-    title?: TemplateResult | string;
-    content?: TemplateResult;
-    actions?: DialogAction[];
-    avatar?: boolean;
-    styles?: TemplateResult | string;
-    dismissAction?: DialogActionBase | null;
-}
 export interface DialogActionBase {
     actionName: string;
     action?: (dialog: OrMwcDialog) => void;
@@ -67,9 +56,10 @@ declare global {
 export async function showErrorDialog(errorMessage: string, hostElement?: HTMLElement) {
     const deferred = new Util.Deferred<void>();
 
-    showDialog({
-        title: "error",
-        content: html`
+    showDialog(new OrMwcDialog()
+        .setHeading("error")
+        .setContent(
+            html`
                 <div>
                     <p><or-translate value="errorOccurred"></or-translate>
                     ${errorMessage ? html`
@@ -80,52 +70,54 @@ export async function showErrorDialog(errorMessage: string, hostElement?: HTMLEl
                             <or-translate .value="${errorMessage}"></or-translate>
                     ` : ``}
                     </p>
-                </div>`,
-        actions: [{
-            actionName: "ok",
-            content: i18next.t("ok"),
-            default: true,
-            action: (dialog) => deferred.resolve()
-        }]
-    }, hostElement);
+                </div>`
+        )
+        .setActions(
+            [{
+                actionName: "ok",
+                content: i18next.t("ok"),
+                default: true,
+                action: (dialog) => deferred.resolve()
+            }]
+        ), hostElement);
 
     await deferred.promise;
 }
 
-export async function showOkCancelDialog(title: string, content: string | TemplateResult, okText?: string) {
+export async function showOkCancelDialog(title: string, content: string | TemplateResult, okText?: string, hostElement?: HTMLElement) {
 
     const deferred = new Util.Deferred<boolean>();
 
     showDialog(
-        {
-            content: typeof(content) === "string" ? html`<p>${content}</p>` : content,
-            actions: [
-                {
-                    actionName: "cancel",
-                    content: "cancel",
-                    default: true,
-                    action: () => deferred.resolve(false)
-                },
-                {
-                    actionName: "ok",
-                    content: okText ? okText : "ok",
-                    action: () => deferred.resolve(true)
-                }
-            ],
-            title: title
-        }
-    );
+        new OrMwcDialog()
+            .setContent(typeof(content) === "string" ? html`<p>${content}</p>` : content)
+            .setActions(
+                [
+                    {
+                        actionName: "cancel",
+                        content: i18next.t("cancel"),
+                        default: true,
+                        action: () => deferred.resolve(false)
+                    },
+                    {
+                        actionName: "ok",
+                        content: okText ? okText : i18next.t("ok"),
+                        action: () => deferred.resolve(true)
+                    }
+                ]
+            )
+            .setHeading(title),
+        hostElement);
 
     return await deferred.promise;
 }
 
-export function showDialog(config: DialogConfig, hostElement?: HTMLElement): OrMwcDialog {
+export function showDialog<T extends OrMwcDialog>(dialog: T, hostElement?: HTMLElement): T {
     if (!hostElement) {
         hostElement = OrMwcDialog.DialogHostElement || document.body;
     }
 
-    const dialog = new OrMwcDialog();
-    dialog.isOpen = true;
+    dialog.setOpen(true);
     dialog.addEventListener(OrMwcDialogOpenedEvent.NAME, (ev) => {
         ev.stopPropagation();
     });
@@ -137,7 +129,6 @@ export function showDialog(config: DialogConfig, hostElement?: HTMLElement): OrM
             }
         }, 0);
     });
-    dialog.config = config;
     hostElement.append(dialog);
     return dialog;
 }
@@ -184,25 +175,14 @@ export class OrMwcDialog extends LitElement {
         ];
     }
 
-    public set config(config: DialogConfig) {
-        if (config) {
-            this.dialogTitle = config.title;
-            this.dialogContent = config.content;
-            this.dialogActions = config.actions;
-            this.dismissAction = config.dismissAction;
-            this.avatar = config.avatar;
-            this.styles = config.styles;
-        }
-    };
-
     @property({type: String})
-    public dialogTitle?: string | TemplateResult;
+    public heading?: string | TemplateResult;
 
     @property({type: Object, attribute: false})
-    public dialogContent?: TemplateResult;
+    public content?: TemplateResult | (() => TemplateResult);
 
     @property({type: Array, attribute: false})
-    public dialogActions?: DialogAction[];
+    public actions?: DialogAction[];
 
     @property({type: Object, attribute: false})
     public dismissAction: DialogActionBase | null | undefined;
@@ -225,8 +205,39 @@ export class OrMwcDialog extends LitElement {
         return this._mdcComponent ? this._mdcComponent.isOpen : false;
     }
 
-    public set isOpen(isOpen: boolean) {
+    public setOpen(isOpen: boolean): OrMwcDialog  {
         this._open = true;
+        return this;
+    }
+
+    public setHeading(heading: TemplateResult | string | undefined): OrMwcDialog {
+        this.heading = heading;
+        return this;
+    }
+
+    public setContent(content: TemplateResult | (() => TemplateResult) | undefined): OrMwcDialog {
+        this.content = content;
+        return this;
+    }
+
+    public setActions(actions: DialogAction[] | undefined): OrMwcDialog {
+        this.actions = actions;
+        return this;
+    }
+
+    public setDismissAction(action: DialogActionBase | null | undefined): OrMwcDialog {
+        this.dismissAction = action;
+        return this;
+    }
+
+    public setStyles(styles: string | TemplateResult | undefined): OrMwcDialog {
+        this.styles = styles;
+        return this;
+    }
+
+    public setAvatar(avatar: boolean | undefined): OrMwcDialog {
+        this.avatar = avatar;
+        return this;
     }
 
     public open() {
@@ -268,14 +279,14 @@ export class OrMwcDialog extends LitElement {
                 @MDCDialog:closed="${(evt: any) => this._onDialogClosed(evt.detail.action)}">
                 <div class="mdc-dialog__container">
                     <div class="mdc-dialog__surface">
-						${typeof(this.dialogTitle) === "string" ? html`<h2 class="mdc-dialog__title" id="dialog-title"><or-translate value="${this.dialogTitle}"></or-translate></h2>`
-                            : this.dialogTitle ? html`<span class="mdc-dialog__title" id="dialog-title">${this.dialogTitle}</span>` : ``}
-                        ${this.dialogContent ? html` 
+						${typeof(this.heading) === "string" ? html`<h2 class="mdc-dialog__title" id="dialog-title"><or-translate value="${this.heading}"></or-translate></h2>`
+                            : this.heading ? html`<span class="mdc-dialog__title" id="dialog-title">${this.heading}</span>` : ``}
+                        ${this.content ? html` 
                             <div class="dialog-container mdc-dialog__content" id="dialog-content">
-                                ${this.dialogContent ? this.dialogContent : html`<slot></slot>`}
+                                ${typeof this.content === "function" ? this.content() : this.content}
                             </div>
                             <footer class="mdc-dialog__actions">
-                                ${this.dialogActions ? this.dialogActions.map((action) => {
+                                ${this.actions ? this.actions.map((action) => {
                                     return html`
                                     <div class="mdc-button mdc-dialog__button" ?data-mdc-dialog-button-default="${action.default}" data-mdc-dialog-action="${action.actionName}">
                                         ${typeof(action.content) === "string" ? html`<or-mwc-input .type="${InputType.BUTTON}" .disabled="${action.disabled}" .label="${action.content}"></or-mwc-input>` : action.content}
@@ -284,7 +295,7 @@ export class OrMwcDialog extends LitElement {
                             </footer>
                         ` : html`
                             <ul class="mdc-list ${this.avatar ? "mdc-list--avatar-list" : ""}">
-                                ${!this.dialogActions ? `` : this.dialogActions!.map((action, index) => {
+                                ${!this.actions ? `` : this.actions!.map((action, index) => {
                                     return html`<li class="mdc-list-item" data-mdc-dialog-action="${action.actionName}"><span class="mdc-list-item__text">${action.content}</span></li>`;                    
                                 })}
                             </ul>
@@ -310,8 +321,8 @@ export class OrMwcDialog extends LitElement {
     protected _onDialogClosed(action?: string) {
         if (action === "close" && this.dismissAction && this.dismissAction.action) {
             this.dismissAction.action(this);
-        } else if (action && this.dialogActions) {
-            const matchedAction = this.dialogActions.find((dialogAction) => dialogAction.actionName === action);
+        } else if (action && this.actions) {
+            const matchedAction = this.actions.find((dialogAction) => dialogAction.actionName === action);
             if (matchedAction && matchedAction.action) {
                 matchedAction.action(this);
             }
@@ -322,215 +333,4 @@ export class OrMwcDialog extends LitElement {
         }
         this.dispatchEvent(new OrMwcDialogClosedEvent(action));
     }
-}
-
-export type AddAttrRefsEventDetail = {
-    selectedAttributes?: AttributeRef[];
-}
-export class OrAttributeRefsAddRequestEvent extends CustomEvent<Util.RequestEventDetail<AddAttrRefsEventDetail>> {
-
-    public static readonly NAME = "or-attribute-refs-request-add";
-
-    constructor(detail: AddAttrRefsEventDetail) {
-        super(OrAttributeRefsAddRequestEvent.NAME, {
-            bubbles: true,
-            composed: true,
-            detail: {
-                allow: true,
-                detail: detail
-            }
-        });
-    }
-}
-export class OrAddAttributeRefsEvent extends CustomEvent<AddAttrRefsEventDetail> {
-
-    public static readonly NAME = "or-attribute-refs-add";
-
-    constructor(detail: AddAttrRefsEventDetail) {
-        super(OrAddAttributeRefsEvent.NAME, {
-            bubbles: true,
-            composed: true,
-            detail: detail
-        });
-    }
-}
-
-@customElement("or-mwc-attribute-selector")
-export class OrMwcAttributeSelector extends OrMwcDialog {
-
-    public selectedAsset?: Asset;
-
-    private assetAttributes: Attribute<any>[] = []; // to display attributes that belong to selected asset
-    
-    @property({type: Boolean})
-    public showOnlyDatapointAttrs?: boolean = false;
-    
-    @property({type: Boolean})
-    public showOnlyRuleStateAttrs?: boolean = false;
-
-    @property({type: Array, attribute: false})
-    public selectedAttributes: AttributeRef[] = [];
-
-    @property({type: Boolean})
-    public multiSelect?: boolean = false;
-    
-    constructor() {
-        super();
-        
-        this.dialogTitle = 'Add attributes';
-        this.dismissAction = null;
-
-        this.styles = `
-            .attributes-header {
-                line-height: 48px;
-                padding: 0 15px;
-                background-color: ${unsafeCSS(DefaultColor2)};
-                font-weight: bold;
-                border-bottom: 1px solid ${unsafeCSS(DefaultColor2)};
-            }
-            footer.mdc-dialog__actions {
-                border-top: 1px solid ${unsafeCSS(DefaultColor5)};
-            }
-            #header {
-                background-color: ${unsafeCSS(DefaultColor4)} !important;
-            }
-            #dialog-content {
-                padding: 0;
-            }
-        `;
-        
-        this.reRenderDialog();
-
-    }
-    
-    protected setDialogActions(): void {
-        this.dialogActions = [
-            {
-                actionName: "cancel",
-                content: i18next.t("cancel")
-            },
-            {
-                actionName: "add",
-                content: html`<or-mwc-input id="add-btn" class="button" .type="${InputType.BUTTON}" label="${i18next.t("add")}" ?disabled="${!this.selectedAttributes.length || !this.selectedAsset}"></or-mwc-input>`,
-                action: () => {
-
-                    if (!this.selectedAttributes.length) {
-                        return;
-                    }
-                    
-                    const detail: AddAttrRefsEventDetail = {
-                        selectedAttributes: this.selectedAttributes
-                    };
-                    Util.dispatchCancellableEvent(this, new OrAttributeRefsAddRequestEvent(detail))
-                        .then((detail) => {
-                            if (detail.allow) {
-                                this.dispatchEvent(new OrAddAttributeRefsEvent(detail.detail));
-                            }
-                        });
-                }
-            }
-        ];
-    }
-    
-    protected setDialogContent(): void {
-    
-        const listItems: ListItem[] = this.assetAttributes.map((attribute: Attribute<any>) => {
-            return {
-                text: Util.getAttributeLabel(undefined, attribute, undefined, true),
-                value: attribute.name
-            } as ListItem
-        });
-        
-        this.dialogContent = html`
-            <div class="row" style="display: flex;height: 600px;width: 800px;">
-                <div class="col" style="width: 260px;overflow: auto;">
-                    <or-asset-tree id="chart-asset-tree" readonly
-                                    @or-asset-tree-request-selection="${(event: CustomEvent) => this._onAssetSelectionChanged(event)}"
-                                    @or-asset-tree-request-delete="${() => this._onAssetSelectionDeleted()}"></or-asset-tree>
-                </div>
-                <div class="col" style="flex: 1 1 auto;width: 260px;overflow: auto;">
-                ${this.selectedAsset && listItems.length > 0 ? html`
-                    <div class="attributes-header">
-                        <or-translate value="attribute_plural"></or-translate>
-                    </div>
-                    ${this.multiSelect
-                        ?
-                            html`<div style="display: grid">
-                                <or-mwc-list 
-                                        id="attribute-selector" .type="${ListType.MULTI_CHECKBOX}" .listItems="${listItems}"
-                                        .values="${this.selectedAttributes.map(e => e.id === this.selectedAsset!.id && e.name!)}"
-                                        @or-mwc-list-changed="${(ev: OrMwcListChangedEvent) => this._addRemoveAttrs(ev)}"></or-mwc-list>
-                            </div>`
-                        :
-                            html`<or-mwc-input id="attribute-selector"
-                                    style="display:flex;"
-                                    .label="${i18next.t("attribute")}"
-                                    .type="${InputType.LIST}"
-                                    .options="${listItems.map(item => ([item.value, item.text]))}"
-                                    @or-mwc-input-changed="${(ev: OrInputChangedEvent) => {
-                                        this.selectedAttributes = [{id: this.selectedAsset!.id, name: ev.detail.value}]; 
-                                        this.reRenderDialog()}
-                                    }"></or-mwc-input>`
-                    }
-                ` : html`<div style="display: flex;align-items: center;text-align: center;height: 100%;"><span style="width:100%"><or-translate value="selectAssetOnTheLeft"></or-translate></span></div>`}
-                </div>
-        `;
-    }
-    
-    protected reRenderDialog(): void {
-        this.setDialogContent();
-        this.setDialogActions();
-    }
-    
-    protected _addRemoveAttrs(event: OrMwcListChangedEvent) {
-        this.selectedAttributes = this.selectedAttributes
-            .filter(e => e.id !== this.selectedAsset!.id)
-            .concat(event.detail.map(e => ({id: this.selectedAsset!.id, name: e.value}) as AttributeRef))
-        
-        this.reRenderDialog();
-    }
-
-    protected _getAttributeOptions() {
-        if (!this.selectedAsset || !this.selectedAsset.type) {
-            this.reRenderDialog();
-            return;
-        }
-
-        manager.rest.api.AssetResource.get(this.selectedAsset.id!)
-            .then(result => {
-                this.assetAttributes = Object.values(result.data.attributes!) as Attribute<any>[];
-                if (this.showOnlyDatapointAttrs) {
-                    this.assetAttributes = this.assetAttributes
-                        .filter(e => e.meta && (e.meta[WellknownMetaItems.STOREDATAPOINTS] || e.meta[WellknownMetaItems.AGENTLINK]));
-                }else if (this.showOnlyRuleStateAttrs) {
-                    this.assetAttributes = this.assetAttributes
-                        .filter(e => e.meta && (e.meta[WellknownMetaItems.RULESTATE]));
-                }
-                this.reRenderDialog();
-            });
-
-    }
-
-    protected async _onAssetSelectionChanged(event: CustomEvent) {
-        if (!event.detail.detail.newNodes.length) {
-            this._onAssetSelectionDeleted();
-        } else {
-            const assetEvent: AssetEvent = await manager.events!.sendEventWithReply({
-                event: {
-                    eventType: "read-asset",
-                    assetId: event.detail.detail.newNodes[0].asset.id
-                }
-            });
-            this.selectedAsset = assetEvent.asset;
-        }
-
-        this._getAttributeOptions();
-    }
-    
-    protected _onAssetSelectionDeleted() {
-        this.selectedAsset = undefined;
-        this.assetAttributes = [];
-        this._getAttributeOptions();
-    }
-
 }

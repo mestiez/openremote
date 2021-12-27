@@ -55,11 +55,23 @@ public class ORAuthorizatorPolicy implements IAuthorizatorPolicy {
     }
 
     @SuppressWarnings({"rawtypes", "unchecked"})
-    protected boolean verifyRights(Topic topic, String sessionId, String realm, String username, boolean isWrite) {
-        MqttConnection connection = brokerService.clientIdConnectionMap.get(sessionId);
+    protected boolean verifyRights(Topic topic, String clientId, String realm, String username, boolean isWrite) {
+        MqttConnection connection = brokerService.clientIdConnectionMap.get(clientId);
+        int i=0;
+
+        try {
+            while (connection == null && i<10) {
+                // The connection handler gets called after this quite often so try and wait until the connection is registered
+                connection = brokerService.clientIdConnectionMap.get(clientId);
+                i++;
+                Thread.sleep(100);
+            }
+        } catch (InterruptedException e) {
+            LOG.finer("Interrupted whilst waiting for connection to be initialised: clientId=" + clientId);
+        }
 
         if (connection == null) {
-            LOG.warning("No connection found: sessionId=" + sessionId);
+            LOG.warning("No connection found: clientId=" + clientId);
             return false;
         }
 

@@ -7,18 +7,19 @@ import {AppStateKeyed} from "@openremote/or-app";
 import {i18next} from "@openremote/or-translate";
 import manager, { DefaultColor3, Util } from "@openremote/core";
 import { InputType, OrInputChangedEvent } from "@openremote/or-mwc-components/or-mwc-input";
-import {OrAddAttributeRefsEvent, OrMwcAttributeSelector, OrAttributeRefsAddRequestEvent } from "@openremote/or-mwc-components/or-mwc-dialog";
+import {OrAttributePickerPickedEvent, OrAttributePicker } from "@openremote/or-attribute-picker";
 import { AttributeRef } from "@openremote/model";
 import moment from "moment";
 import { buttonStyle } from "@openremote/or-rules/dist/style";
 import {createSelector} from "reselect";
+import { showDialog } from "@openremote/or-mwc-components/or-mwc-dialog";
 const tableStyle = require("@material/data-table/dist/mdc.data-table.css");
 
 export function pageExportProvider<S extends AppStateKeyed>(store: EnhancedStore<S>): PageProvider<S> {
     return {
         name: "export",
         routes: [
-            "export"
+            "data-export"
         ],
         pageCreator: () => {
             return new PageExport(store);
@@ -265,7 +266,6 @@ class PageExport<S extends AppStateKeyed> extends Page<S> {
                         <or-mwc-input .disabled="${this.isClearExportBtnDisabled}" class="button" .type="${InputType.BUTTON}" label="${i18next.t("clearTable")}" @click="${() => this.clearSelection()}"></or-mwc-input>
                         <or-mwc-input .disabled="${this.isExportBtnDisabled}" class="button" raised .type="${InputType.BUTTON}" label="${i18next.t("export")}" @click="${() => this.export()}"></or-mwc-input>
                     </div>
-                    <or-mwc-dialog id="mdc-dialog"></or-mwc-dialog>
                 </div>
             </div>
 
@@ -352,15 +352,15 @@ class PageExport<S extends AppStateKeyed> extends Page<S> {
     }
     
     protected _openDialog() {
-        const hostElement = document.body;
 
-        const dialog = new OrMwcAttributeSelector();
-        dialog.isOpen = true;
-        dialog.showOnlyDatapointAttrs = true;
-        dialog.multiSelect = true;
-        dialog.selectedAttributes = this.config.selectedAttributes;
-        dialog.addEventListener(OrAddAttributeRefsEvent.NAME, async (ev: OrAddAttributeRefsEvent) => {
-            const selectedAttributes = ev.detail.selectedAttributes;
+        const dialog = showDialog(new OrAttributePicker()
+            .setShowOnlyDatapointAttrs(true)
+            .setMultiSelect(true)
+            .setSelectedAttributes(this.config.selectedAttributes)
+        );
+
+        dialog.addEventListener(OrAttributePickerPickedEvent.NAME, async (ev: OrAttributePickerPickedEvent) => {
+            const selectedAttributes = ev.detail;
             await this.renderTable(selectedAttributes);
             this.config = {
                 realm: this.realm,
@@ -368,8 +368,6 @@ class PageExport<S extends AppStateKeyed> extends Page<S> {
             }
             this.saveConfig();
         });
-        hostElement.append(dialog);
-        return dialog;
     }
     
     protected export = () => {

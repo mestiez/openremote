@@ -2,6 +2,7 @@ import {
     CombinatorKeyword,
     composeWithUi,
     ControlElement,
+    ControlProps,
     createDefaultValue,
     deriveTypes,
     getAjv,
@@ -23,7 +24,7 @@ import {
     StatePropsOfCombinator,
 } from "@jsonforms/core";
 import {DefaultColor5, Util} from "@openremote/core";
-import { InputType, OrMwcInput } from "@openremote/or-mwc-components/or-mwc-input";
+import { InputType, OrInputChangedEvent, OrMwcInput } from "@openremote/or-mwc-components/or-mwc-input";
 import { i18next } from "@openremote/or-translate";
 import "@openremote/or-components/or-ace-editor";
 import {OrAceEditor, OrAceEditorChangedEvent} from "@openremote/or-components/or-ace-editor";
@@ -31,9 +32,10 @@ import {html, TemplateResult, unsafeCSS} from "lit";
 import {createRef, Ref, ref} from 'lit/directives/ref.js';
 import {ErrorObject} from "./index";
 import {unknownTemplate} from "./standard-renderers";
-import { showDialog } from "@openremote/or-mwc-components/or-mwc-dialog";
+import {OrMwcDialog, showDialog } from "@openremote/or-mwc-components/or-mwc-dialog";
+import {AdditionalProps} from "./base-element";
 
-export function getTemplateFromProps<T extends OwnPropsOfRenderer>(state: JsonFormsSubStates | undefined, props: T | undefined): TemplateResult {
+export function getTemplateFromProps<T extends OwnPropsOfRenderer>(state: JsonFormsSubStates | undefined, props: T | undefined): TemplateResult | undefined {
     if (!state || !props) {
         return html``;
     }
@@ -54,7 +56,7 @@ export function getTemplateFromProps<T extends OwnPropsOfRenderer>(state: JsonFo
         }
     }
 
-    return template || html``;
+    return template;
 }
 
 export interface CombinatorInfo {
@@ -110,7 +112,7 @@ export function getCombinatorInfos(schemas: JsonSchema[], rootSchema: JsonSchema
         }
 
         return {
-            title: Util.camelCaseToSentenceCase(titleAndDescription[0]),
+            title: titleAndDescription[0],
             description: titleAndDescription[1],
             defaultValueCreator: creator,
             constProperty: constProperty,
@@ -131,6 +133,19 @@ export function getSchemaConst(schema: JsonSchema): any {
     if (Array.isArray(schema.enum) && schema.enum!.length === 1) {
         return schema.enum[0];
     }
+}
+
+export function getSchemaPicker(rootSchema: JsonSchema, resolvedSchema: JsonSchema, path: string, keyword: "anyOf" | "oneOf", label: string, selectedCallback: (selectedSchema: CombinatorInfo) => void): TemplateResult {
+    const combinatorInfos = getCombinatorInfos(resolvedSchema[keyword]!, rootSchema);
+    const options: [string, string][] = combinatorInfos.map((combinatorInfo, index) => [index+"", combinatorInfo.title || i18next.t("schema.title.indexedItem", {index: index})]);
+    const pickerUpdater = (index: number) => {
+        const matchedInfo = combinatorInfos[index];
+        selectedCallback(matchedInfo);
+    };
+    const pickerLabel = label ? i18next.t("schema.anyOfPickerLabel", {label: label}) : i18next.t("type");
+    return html`                
+        <or-mwc-input class="any-of-picker" .label="${pickerLabel}" .type="${InputType.SELECT}" .options="${options}" @or-mwc-input-changed="${(ev: OrInputChangedEvent) => pickerUpdater(Number(ev.detail.value))}"></or-mwc-input>
+    `;
 }
 
 export function findSchemaTitleAndDescription(schema: JsonSchema, rootSchema: JsonSchema): [string | undefined, string | undefined] {
@@ -155,7 +170,7 @@ export function findSchemaTitleAndDescription(schema: JsonSchema, rootSchema: Js
         }
     }
 
-    return [title, undefined];
+    return [i18next.t("schema.title." + title, {defaultValue: Util.camelCaseToSentenceCase(title)}), undefined];
 }
 
 function getLabelFromScopeOrRef(scopeOrRef: string) {
@@ -325,12 +340,11 @@ export const showJsonEditor = (title: string, value: any, updateCallback: (newVa
         updateBtnRef.value!.disabled = !valid;
     };
 
-    const dialog = showDialog(
-        {
-            content: html`
+    const dialog = showDialog(new OrMwcDialog()
+        .setContent(html`
                 <or-ace-editor ${ref(editorRef)} @or-ace-editor-edit="${() => onEditorEdit()}" @or-ace-editor-changed="${(ev: OrAceEditorChangedEvent) => onEditorChanged(ev)}" .value="${value}"></or-ace-editor>
-            `,
-            actions: [
+            `)
+        .setActions([
                 {
                     actionName: "cancel",
                     content: i18next.t("cancel")
@@ -347,10 +361,10 @@ export const showJsonEditor = (title: string, value: any, updateCallback: (newVa
                     },
                     content: html`<or-mwc-input ${ref(updateBtnRef)} disabled .type="${InputType.BUTTON}" .label="${i18next.t("update")}"></or-mwc-input>`
                 }
-            ],
-            title: title,
-            dismissAction: null,
-            styles: html`
+            ])
+        .setHeading(title)
+        .setDismissAction(null)
+        .setStyles(html`
                 <style>
                     .mdc-dialog__surface {
                         width: 1024px;
@@ -368,7 +382,5 @@ export const showJsonEditor = (title: string, value: any, updateCallback: (newVa
                         height: 60vh;
                     }
                 </style>
-            `
-        }
-    )
+            `));
 };
